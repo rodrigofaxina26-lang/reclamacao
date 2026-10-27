@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block titulo %}Usuários{% endblock %}
+{% block conteudo %}
+<h1>Usuários</h1>
+<table class="tabela">
+  <thead><tr><th>Login</th><th>Nome</th><th>Situação</th><th>Redefinir senha</th><th></th></tr></thead>
+  <tbody>
+  {% for u in usuarios %}
+  <tr>
+    <td>{{ u.login }}</td><td>{{ u.nome }}</td><td>{{ 'Ativo' if u.ativo else 'Desativado' }}</td>
+    <td>
+      <form method="post" action="{{ url_for('rec.usuario_senha', uid=u.id) }}" class="linha" style="margin:0">
+        <input name="senha" type="password" placeholder="Nova senha" required minlength="6">
+        <input name="confirmacao" type="password" placeholder="Repita" required minlength="6">
+        <button>Salvar</button>
+      </form>
+    </td>
+    <td>{% if u.login != session.usuario %}
+      <form method="post" action="{{ url_for('rec.usuario_ativo', uid=u.id) }}"><button class="link">{{ 'desativar' if u.ativo else 'ativar' }}</button></form>
+    {% endif %}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3>Novo usuário</h3>
+<form method="post" class="caixa grade">
+  <label>Login (sem espaços) <input name="login" required></label>
+  <label>Nome completo <input name="nome" required></label>
+  <label>Senha (mín. 6 caracteres) <input name="senha" type="password" required minlength="6"></label>
+  <label>Repita a senha <input name="confirmacao" type="password" required minlength="6"></label>
+  <div class="largo"><button type="submit">Criar usuário</button></div>
+</form>
+{% endblock %}

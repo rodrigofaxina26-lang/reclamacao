@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block titulo %}{{ titulo }}{% endblock %}
+{% block conteudo %}
+<form method="post" class="caixa login">
+  <h1>{{ titulo }}</h1>
+  {% if aviso %}<p class="nota">{{ aviso }}</p>{% endif %}
+  <label>Login (sem espaços) <input name="login" required autofocus></label>
+  <label>Nome completo <input name="nome" required></label>
+  <label>Senha (mín. 6 caracteres) <input name="senha" type="password" required minlength="6"></label>
+  <label>Repita a senha <input name="confirmacao" type="password" required minlength="6"></label>
+  <button type="submit">Criar usuário</button>
+</form>
+{% endblock %}

@@ -5,7 +5,8 @@ from flask import (Blueprint, render_template, request, redirect, url_for, flash
                    session, current_app, send_from_directory, abort, jsonify)
 from werkzeug.utils import secure_filename
 
-from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, STATUS
+from auth import _validar_usuario
+from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, Usuario, STATUS
 from servicos import (write_lock, registrar, gerar_codigo, normalizar_pn, normalizar_modo,
                       buscar_recorrencias, aplicar_campos, converter, ABAS, CAMPOS,
                       STATUS_EDITAVEIS)
@@ -207,3 +208,52 @@ def evidencia_baixar(eid):
 def _grande_demais(_):
     flash("Arquivo maior que 20 MB.", "erro")
     return redirect(request.referrer or url_for("rec.lista"))
+
+
+# ---------------- usuários ----------------
+@bp.route("/usuarios", methods=["GET", "POST"])
+def usuarios():
+    if request.method == "POST":
+        f = request.form
+        login_, nome = f.get("login", "").strip(), f.get("nome", "").strip()
+        erro = _validar_usuario(login_, nome, f.get("senha", ""), f.get("confirmacao", ""))
+        if not erro and Usuario.query.filter_by(login=login_).first():
+            erro = f"O login '{login_}' já existe."
+        if erro:
+            flash(erro, "erro")
+        else:
+            with write_lock:
+                u = Usuario(login=login_, nome=nome)
+                u.definir_senha(f["senha"])
+                db.session.add(u)
+                db.session.commit()
+            flash(f"Usuário '{login_}' criado.", "ok")
+        return redirect(url_for("rec.usuarios"))
+    return render_template("usuarios.html", usuarios=Usuario.query.order_by(Usuario.nome).all())
+
+
+@bp.route("/usuarios/<int:uid>/ativo", methods=["POST"])
+def usuario_ativo(uid):
+    u = db.get_or_404(Usuario, uid)
+    if u.login == session["usuario"]:
+        flash("Você não pode desativar o próprio usuário.", "erro")
+    else:
+        with write_lock:
+            u.ativo = not u.ativo
+            db.session.commit()
+        flash(f"Usuário '{u.login}' {'ativado' if u.ativo else 'desativado'}.", "ok")
+    return redirect(url_for("rec.usuarios"))
+
+
+@bp.route("/usuarios/<int:uid>/senha", methods=["POST"])
+def usuario_senha(uid):
+    u = db.get_or_404(Usuario, uid)
+    erro = _validar_usuario(u.login, u.nome, request.form.get("senha", ""), request.form.get("confirmacao", ""))
+    if erro:
+        flash(erro, "erro")
+    else:
+        with write_lock:
+            u.definir_senha(request.form["senha"])
+            db.session.commit()
+        flash(f"Senha de '{u.login}' redefinida.", "ok")
+    return redirect(url_for("rec.usuarios"))
