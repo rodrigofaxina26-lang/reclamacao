@@ -121,25 +121,34 @@ def _chamar_gemini(cfg, chave, anexos, texto):
 
     partes = [types.Part.from_bytes(data=dados, mime_type=tipo) for tipo, dados in anexos] + [texto]
     cliente = genai.Client(api_key=chave)  # manter a referência: o SDK fecha a conexão se o objeto sumir
-    try:
-        resp = cliente.models.generate_content(
-            model=cfg["modelo"], contents=partes,
-            config=types.GenerateContentConfig(system_instruction=INSTRUCOES,
-                                               response_mime_type="application/json",
-                                               response_json_schema=ESQUEMA))
-    except errors.ClientError as e:
-        if e.code == 429:
-            raise ErroIA("Limite da camada gratuita do Gemini atingido. Aguarde alguns minutos e tente de novo.")
-        raise ErroIA(f"Gemini recusou o pedido ({e.code}): {e.message}. Confira a chave e o modelo em instance/fontes.json.")
-    except errors.APIError as e:
-        raise ErroIA(f"Erro no Gemini ({e.code}): {e.message}")
-    except Exception as e:  # rede, proxy, timeout
-        raise ErroIA(f"Sem conexão com o Gemini (internet/proxy): {e}")
+    # modelo principal sobrecarregado (503) ou sem cota (429) -> tenta os modelos reserva, em ordem
+    modelos = [cfg["modelo"]] + [m for m in cfg.get("modelos_reserva", []) if m != cfg["modelo"]]
+    for n, modelo in enumerate(modelos):
+        ultimo = n == len(modelos) - 1
+        try:
+            resp = cliente.models.generate_content(
+                model=modelo, contents=partes,
+                config=types.GenerateContentConfig(system_instruction=INSTRUCOES,
+                                                   response_mime_type="application/json",
+                                                   response_json_schema=ESQUEMA))
+            break
+        except errors.ClientError as e:
+            if e.code == 429:
+                if not ultimo:
+                    continue
+                raise ErroIA("Limite da camada gratuita do Gemini atingido. Aguarde alguns minutos e tente de novo.")
+            raise ErroIA(f"Gemini recusou o pedido ({e.code}): {e.message}. Confira a chave e o modelo em instance/fontes.json.")
+        except errors.APIError as e:
+            if e.code == 503 and not ultimo:
+                continue
+            raise ErroIA(f"Gemini indisponível no momento ({e.code}). Tente de novo em alguns minutos.")
+        except Exception as e:  # rede, proxy, timeout
+            raise ErroIA(f"Sem conexão com o Gemini (internet/proxy): {e}")
     if not resp.text:
         raise ErroIA("O Gemini não devolveu resposta (pode ter bloqueado o conteúdo). Tente de novo.")
     u = resp.usage_metadata
-    return resp.text, cfg["modelo"], {"entrada": u.prompt_token_count if u else None,
-                                      "saida": u.candidates_token_count if u else None}
+    return resp.text, modelo, {"entrada": u.prompt_token_count if u else None,
+                               "saida": u.candidates_token_count if u else None}
 
 
 def _chamar_claude(cfg, chave, anexos, texto):
