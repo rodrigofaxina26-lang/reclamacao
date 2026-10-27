@@ -42,3 +42,18 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .abas a { padding: 7px 12px; text-decoration: none; color: #1f3a5f; }
 .abas a.ativa { background: #1f3a5f; color: #fff; border-radius: 4px 4px 0 0; }
 .pendencias li { color: #a00; }
+.svg-caixa { overflow-x: auto; border: 1px solid #e3e3e3; border-radius: 4px; background: #fff; }
+.ishikawa { width: 100%; min-width: 900px; height: auto; display: block; }
+.legenda { font-size: 12px; color: #555; }
+.causa { border: 1px solid #e3e3e3; border-left: 4px solid #999; border-radius: 3px; padding: 8px 10px; margin-top: 10px; }
+.causa-provavel { border-left-color: #b3261e; }
+.causa-descartada { border-left-color: #ccc; opacity: .75; }
+.causa-em_analise { border-left-color: #1f3a5f; }
+.tag { background: #e9edf2; color: #1f3a5f; padding: 1px 7px; border-radius: 10px; font-size: 12px; }
+.porques { margin-top: 8px; }
+.porques details { margin-top: 6px; }
+.porques summary { cursor: pointer; font-weight: 600; color: #1f3a5f; }
+.atrasado { color: #b00; font-weight: 600; }
+.painel { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.barra { height: 14px; background: #1f3a5f; border-radius: 2px; min-width: 2px; }
+.pareto-80 td { background: #fff7e0; }

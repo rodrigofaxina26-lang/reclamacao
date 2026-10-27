@@ -33,11 +33,83 @@
   </form>
   {% endif %}
 
-{% elif aba in ('D5', 'D6') %}
-  <p class="nota">Cadastro de ações (foco ocorrência / não detecção, responsável, prazo, status) entra na Fase 2.</p>
+{% elif aba == 'D4' %}
+  <h3 id="ishikawa" style="margin-top:0">Ishikawa (6M)</h3>
+  <div class="svg-caixa">{{ svg|safe }}</div>
+  <p class="legenda"><span style="color:#b3261e;font-weight:700">Provável</span> · Em análise · <span style="color:#9a9a9a;text-decoration:line-through">Descartada</span></p>
+  {% if not fechada %}
+  <form method="post" action="{{ url_for('ana.causa_add', rid=rec.id) }}" class="linha">
+    <select name="categoria" required><option value="">Categoria 6M</option>{% for c in categorias %}<option>{{ c }}</option>{% endfor %}</select>
+    <input name="descricao" placeholder="Descreva a causa potencial" required style="flex:1;min-width:260px">
+    <button>Incluir causa</button>
+  </form>
+  {% endif %}
+
+  {% for cat in categorias %}{% for c in rec.causas if c.categoria == cat %}
+  <div class="causa causa-{{ c.situacao|lower }}" id="causa-{{ c.id }}">
+    <div class="causa-topo"><span class="tag">{{ c.categoria }}</span> <strong>{{ c.descricao }}</strong></div>
+    <form method="post" action="{{ url_for('ana.causa_salvar', rid=rec.id, cid=c.id) }}" class="linha">
+      <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
+      <select name="situacao">{% for s in situacoes %}<option {{ 'selected' if c.situacao == s }}>{{ s }}</option>{% endfor %}</select>
+      <input name="evidencia" value="{{ c.evidencia or '' }}" placeholder="Evidência (obrigatória para DESCARTADA)" style="flex:1;min-width:300px">
+      <button>Salvar</button>
+      </fieldset>
+    </form>
+    {% if c.situacao == 'PROVAVEL' %}
+    <div class="porques">
+    {% for t, tnome in tipos_porque.items() %}
+      {% set cadeia = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|list %}
+      <details {{ 'open' if cadeia }}>
+        <summary>5 Porquês - {{ tnome }} {{ '✔' if cadeia|selectattr('resposta')|list }}</summary>
+        <form method="post" action="{{ url_for('ana.porques_salvar', rid=rec.id, cid=c.id, tipo=t) }}">
+        <fieldset {{ 'disabled' if fechada }}>
+        <table class="tabela"><thead><tr><th>#</th><th>Por quê?</th><th>Resposta</th></tr></thead><tbody>
+        {% for n in range(1, 6) %}{% set p = cadeia[n - 1] if cadeia|length >= n else none %}
+        <tr><td>{{ n }}</td>
+          <td><input name="pergunta{{ n }}" value="{{ p.pergunta if p else '' }}" placeholder="{{ 'Por que ' ~ ('ocorreu' if t == 'OCORRENCIA' else 'não foi detectado') ~ '?' if n == 1 else 'Por quê?' }}" style="width:100%"></td>
+          <td><input name="resposta{{ n }}" value="{{ (p.resposta or '') if p else '' }}" style="width:100%"></td></tr>
+        {% endfor %}
+        </tbody></table>
+        <button>Salvar 5 Porquês ({{ tnome }})</button>
+        </fieldset>
+        </form>
+      </details>
+    {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}{% else %}{% endfor %}
+  {% if not rec.causas %}<p class="vazio">Nenhuma causa cadastrada.</p>{% endif %}
+  <h3>Conclusão da causa raiz</h3>
+
+{% elif aba == 'D5' %}
   <table class="tabela"><thead><tr><th>Tipo</th><th>Foco</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Status</th></tr></thead><tbody>
-  {% for a in rec.acoes %}<tr><td>{{ a.tipo }}</td><td>{{ a.foco }}</td><td>{{ a.descricao }}</td><td>{{ a.responsavel }}</td><td>{{ a.prazo.strftime('%d/%m/%Y') if a.prazo }}</td><td>{{ a.status }}</td></tr>
+  {% for a in rec.acoes %}<tr><td>{{ a.tipo }}</td><td>{{ tipos_porque[a.foco] }}</td><td>{{ a.descricao }}</td><td>{{ a.responsavel }}</td>
+    <td class="{{ 'atrasado' if a.status != 'CONCLUIDA' and a.prazo < hoje }}">{{ a.prazo.strftime('%d/%m/%Y') }}</td><td>{{ a.status }}</td></tr>
   {% else %}<tr><td colspan="6" class="vazio">Nenhuma ação.</td></tr>{% endfor %}
+  </tbody></table>
+  {% if not fechada %}
+  <h3>Nova ação</h3>
+  <form method="post" action="{{ url_for('ana.acao_add', rid=rec.id) }}" class="grade">
+    <label>Tipo<select name="tipo">{% for t in tipos_acao %}<option>{{ t }}</option>{% endfor %}</select></label>
+    <label>Foco<select name="foco">{% for t, n in tipos_porque.items() %}<option value="{{ t }}">{{ n }}</option>{% endfor %}</select></label>
+    <label>Responsável<input name="responsavel" required></label>
+    <label>Prazo<input type="date" name="prazo" required></label>
+    <label class="largo">Descrição<textarea name="descricao" rows="2" required></textarea></label>
+    <div class="largo"><button>Incluir ação</button></div>
+  </form>
+  {% endif %}
+
+{% elif aba == 'D6' %}
+  <table class="tabela"><thead><tr><th>Foco</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Status / conclusão</th></tr></thead><tbody>
+  {% for a in rec.acoes %}<tr><td>{{ tipos_porque[a.foco] }}</td><td>{{ a.descricao }}</td><td>{{ a.responsavel }}</td>
+    <td class="{{ 'atrasado' if a.status != 'CONCLUIDA' and a.prazo < hoje }}">{{ a.prazo.strftime('%d/%m/%Y') }}</td>
+    <td><form method="post" action="{{ url_for('ana.acao_status', rid=rec.id, aid=a.id) }}" class="linha" style="margin:0">
+      <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
+      <select name="status">{% for s in status_acao %}<option {{ 'selected' if a.status == s }}>{{ s }}</option>{% endfor %}</select>
+      <input type="datetime-local" name="concluida_em" value="{{ a.concluida_em|dtinput }}" title="Data de conclusão (vazio = agora)">
+      <button>Salvar</button></fieldset></form></td></tr>
+  {% else %}<tr><td colspan="5" class="vazio">Nenhuma ação. Cadastre na aba D5.</td></tr>{% endfor %}
   </tbody></table>
 
 {% elif aba == 'HIST' %}
@@ -48,7 +120,7 @@
 
 {% if campos %}
   {% if aba == 'D3' %}<p class="nota">Prazo de contenção: {{ rec.prazo('D3')|dt }}</p>{% endif %}
-  {% if aba == 'D4' %}<p class="nota">Prazo de causa raiz: {{ rec.prazo('D4')|dt }}. Ishikawa (6M) e 5 Porquês entram na Fase 2.</p>{% endif %}
+  {% if aba == 'D4' %}<p class="nota">Prazo de causa raiz: {{ rec.prazo('D4')|dt }}</p>{% endif %}
   <form method="post" action="{{ url_for('rec.salvar', rid=rec.id, aba=aba) }}">
   <fieldset class="grade" {{ 'disabled' if fechada }}>
   {% for nome, rotulo, tipo in campos %}
@@ -82,7 +154,12 @@
   <h3>Pendências para fechar o 8D</h3>
   {% if pend %}<ul class="pendencias">{% for p in pend %}<li>{{ p }}</li>{% endfor %}</ul>
   {% else %}<p>Nenhuma pendência.</p>{% endif %}
-  <button disabled title="Disponível na Fase 2">Fechar 8D</button>
+  {% if fechada %}<p><strong>8D fechado em {{ rec.fechada_em|dt }}.</strong></p>
+  {% else %}
+  <form method="post" action="{{ url_for('ana.fechar', rid=rec.id) }}" onsubmit="return confirm('Fechar o 8D? Depois disso a reclamação não poderá mais ser alterada.')">
+    <button {{ 'disabled' if pend }} title="{{ 'Resolva as pendências acima' if pend }}">Fechar 8D</button>
+  </form>
+  {% endif %}
 {% endif %}
 
 {% if aba != 'HIST' %}

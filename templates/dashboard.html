@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block titulo %}Dashboard{% endblock %}
+{% block conteudo %}
+<h1>Dashboard</h1>
+<form class="filtros" method="get">
+  <label>Cliente
+    <select name="cliente"><option value="">Todos</option>
+    {% for c in lista_clientes %}<option value="{{ c.id }}" {{ 'selected' if filtro.cliente == c.id }}>{{ c.nome }}</option>{% endfor %}
+    </select></label>
+  <label>Ano
+    <select name="ano"><option value="">Todos</option>
+    {% for a in anos %}<option {{ 'selected' if filtro.ano == a }}>{{ a }}</option>{% endfor %}
+    </select></label>
+  <button type="submit">Filtrar</button>
+</form>
+<p>Total de reclamações: <strong>{{ total }}</strong></p>
+
+<div class="painel">
+  <section class="caixa">
+    <h3 style="margin-top:0">% no prazo por etapa</h3>
+    <table class="tabela">
+      <thead><tr><th>Etapa</th><th>Concluídas</th><th>No prazo</th><th>%</th><th>Vencidas em aberto</th></tr></thead>
+      <tbody>
+      {% for p in prazo %}
+      <tr><td>{{ p.nome }}</td><td>{{ p.concluidas }}</td><td>{{ p.no_prazo }}</td>
+        <td>{% if p.pct is none %}-{% else %}<span class="sem {{ 'sem-verde' if p.pct >= 90 else 'sem-amarelo' if p.pct >= 70 else 'sem-vermelho' }}">{{ p.pct }}%</span>{% endif %}</td>
+        <td>{{ p.vencidas_abertas }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="caixa">
+    <h3 style="margin-top:0">Reclamações por cliente</h3>
+    <table class="tabela">
+      <thead><tr><th>Cliente</th><th>Total</th><th>Em aberto</th><th></th></tr></thead>
+      <tbody>
+      {% for nome, n, abertas in clientes %}
+      <tr><td>{{ nome }}</td><td>{{ n }}</td><td>{{ abertas }}</td>
+        <td style="width:45%"><div class="barra" style="width:{{ (100 * n / clientes[0][1])|round }}%"></div></td></tr>
+      {% else %}<tr><td colspan="4" class="vazio">Sem dados.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+
+<section class="caixa" style="margin-top:16px">
+  <h3 style="margin-top:0">Pareto de modo de falha</h3>
+  <table class="tabela">
+    <thead><tr><th>Modo de falha</th><th>Qtd.</th><th style="width:45%"></th><th>% acumulado</th></tr></thead>
+    <tbody>
+    {% for modo, n, acum in pareto %}
+    <tr class="{{ 'pareto-80' if loop.index == 1 or pareto[loop.index0 - 1][2] < 80 }}">
+      <td>{{ modo }}</td><td>{{ n }}</td>
+      <td><div class="barra" style="width:{{ (100 * n / maior)|round }}%"></div></td><td>{{ acum }}%</td></tr>
+    {% else %}<tr><td colspan="4" class="vazio">Sem dados.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  <p class="legenda">Em destaque: modos de falha que somam os primeiros 80% das reclamações.</p>
+</section>
+{% endblock %}

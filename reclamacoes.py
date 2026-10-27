@@ -10,6 +10,9 @@ from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, 
 from servicos import (write_lock, registrar, gerar_codigo, normalizar_pn, normalizar_modo,
                       buscar_recorrencias, aplicar_campos, converter, ABAS, CAMPOS,
                       STATUS_EDITAVEIS)
+from ishikawa_svg import gerar_svg
+from analise import SITUACOES, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO
+from models import CATEGORIAS_6M
 
 bp = Blueprint("rec", __name__)
 
@@ -115,7 +118,10 @@ def detalhe(rid):
     return render_template("detalhe.html", rec=rec, aba=aba, abas=ABAS, campos=CAMPOS.get(aba, []),
                            evidencias=evidencias, historico=historico,
                            recorrencias=buscar_recorrencias(rec.part_number, rec.modo_falha, rec.id),
-                           status_editaveis=STATUS_EDITAVEIS)
+                           status_editaveis=STATUS_EDITAVEIS,
+                           svg=gerar_svg(rec.causas, rec.modo_falha) if aba == "D4" else "",
+                           categorias=CATEGORIAS_6M, situacoes=SITUACOES, tipos_porque=TIPOS_PORQUE,
+                           tipos_acao=TIPOS_ACAO, status_acao=STATUS_ACAO, hoje=datetime.now().date())
 
 
 @bp.route("/<int:rid>/salvar/<aba>", methods=["POST"])

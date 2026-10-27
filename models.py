@@ -103,15 +103,28 @@ class Reclamacao(db.Model):
             p.append("Causa de NÃO DETECÇÃO não preenchida")
         if not self.d4_como_comprovada:
             p.append("Causa raiz sem comprovação")
-        if not any(x.tipo == "NAO_DETECCAO" for x in self.porques):
+        # cadeias só contam se ligadas a causa PROVAVEL e com ao menos uma resposta
+        provaveis = {c.id for c in self.causas if c.situacao == "PROVAVEL"}
+        tipos_ok = {x.tipo for x in self.porques if x.causa_id in provaveis and x.resposta}
+        if "OCORRENCIA" not in tipos_ok:
+            p.append("5 Porquês de ocorrência ausente")
+        if "NAO_DETECCAO" not in tipos_ok:
             p.append("5 Porquês de não detecção ausente")
         for c in self.causas:
             if c.situacao == "DESCARTADA" and not c.evidencia:
                 p.append(f"Causa descartada sem evidência: {c.descricao[:40]}")
+        if not self.acoes:
+            p.append("Nenhuma ação cadastrada (D5)")
+        if not any(a.foco == "OCORRENCIA" for a in self.acoes):
+            p.append("Sem ação com foco em OCORRÊNCIA")
+        if not any(a.foco == "NAO_DETECCAO" for a in self.acoes):
+            p.append("Sem ação com foco em NÃO DETECÇÃO")
         if any(a.status != "CONCLUIDA" for a in self.acoes):
             p.append("Ações em aberto")
-        if self.d8_lotes_verificados < 3:
+        if (self.d8_lotes_verificados or 0) < 3:
             p.append("Eficácia: menos de 3 lotes verificados")
+        if self.d8_eficaz is not True:
+            p.append("Eficácia não confirmada (D8)")
         return p
 
     def recorrencias(self):

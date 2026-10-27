@@ -63,8 +63,10 @@ def create_app(config=None):
 
     from auth import bp as auth_bp
     from reclamacoes import bp as rec_bp
+    from analise import bp as ana_bp
     app.register_blueprint(auth_bp)
     app.register_blueprint(rec_bp)
+    app.register_blueprint(ana_bp)
 
     @app.template_filter("dt")
     def _fmt_dt(v):
