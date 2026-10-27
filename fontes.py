@@ -16,6 +16,7 @@ PADRAO = {
     "cartao_amarelo": "http://192.168.1.150:5001",
     "refugo": "http://192.168.1.150:5003",
     "falhas": "http://192.168.1.150:5000",
+    "materia_prima": "http://192.168.1.150:8765",
     "planilha_nc": r"P:\QUALIDADE\03. NÃO CONFORMIDADES\01. EXTERNAS"
                    r"\00. Gerenciamento de Reclamações 2026 - Externas - Rev 1.xlsx",
     "meses_historico": 12,
@@ -153,6 +154,32 @@ def falhas(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
+CAMPOS_BOBINA = ("id_bobina", "corrida", "fornecedor", "usina_origem", "codigo_mp", "data_entrada",
+                 "data_certificado", "grau_aco", "espessura_mm", "largura_mm", "c", "mn", "si", "p", "s", "al",
+                 "cr", "ni", "mo", "n", "ti", "cu", "nb", "le_mpa", "lr_mpa", "alongamento", "r90", "n90",
+                 "dureza", "clc0", "norma", "status", "resultado")
+
+
+def materia_prima(pn, cfg):
+    """Certificados e CEP das bobinas (ensaios mecânicos e química) da MP usada na peça."""
+    nome = "Matéria-prima (certificados e CEP)"
+    try:
+        cep = json.loads(_get(f"{cfg['materia_prima']}/api/cep", {"peca": pn, "periodo": "tudo"}))
+        regs = [{"tipo": "estatística CEP", **e} for e in cep.get("estatisticas", [])]
+        if cep.get("alerta_clc"):
+            regs.append({"tipo": "alerta de estampagem (CLC0)", "detalhe": cep["alerta_clc"]})
+        bobinas = sorted(cep.get("bobinas", []), key=lambda b: b.get("id", 0), reverse=True)
+        regs += [{"tipo": "bobina", **{k: b[k] for k in CAMPOS_BOBINA if b.get(k) not in (None, "")}}
+                 for b in bobinas[:20]]
+        certs = json.loads(_get(f"{cfg['materia_prima']}/api/busca", {"peca": pn}))
+        regs += [{"tipo": "certificado", **{k: c[k] for k in ("codigo_mp", "fornecedor", "material", "lote",
+                                                             "num_certificado", "nf", "data") if c.get(k)}}
+                 for c in certs[:10]]
+        return _resultado(nome, regs)
+    except Exception as e:
+        return _resultado(nome, erro=str(e))
+
+
 def _txt(v):
     if v is None:
         return ""
@@ -186,7 +213,7 @@ def planilha_nc(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
-FONTES = [cartao_amarelo, refugo, falhas, planilha_nc]
+FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc]
 
 
 def coletar(pn, instance_path):
