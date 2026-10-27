@@ -57,3 +57,5 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .painel { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
 .barra { height: 14px; background: #1f3a5f; border-radius: 2px; min-width: 2px; }
 .pareto-80 td { background: #fff7e0; }
+.envio { white-space: pre-wrap; max-height: 420px; overflow: auto; background: #f7f7f7; border: 1px solid #e3e3e3; padding: 8px; font-size: 12px; }
+.sugestao { border: 2px dashed #b8860b; }

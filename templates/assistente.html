@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block titulo %}Assistente · {{ rec.codigo }}{% endblock %}
+{% block conteudo %}
+<h1>Assistente de análise <small>{{ rec.codigo }} · {{ rec.cliente.nome }} · {{ rec.part_number }} · {{ rec.modo_falha }}</small></h1>
+<p><a href="{{ url_for('rec.detalhe', rid=rec.id, aba='D4') }}">← voltar para a reclamação</a></p>
+
+{% if not tem_chave %}
+<p class="msg msg-alerta">Chave da API do Claude não instalada. Crie o arquivo <code>instance\anthropic_key.txt</code>
+com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo sem ela.</p>
+{% endif %}
+
+<section class="caixa">
+  <h3 style="margin-top:0">1. E-mail do cliente e coleta do histórico</h3>
+  <form method="post" action="{{ url_for('ia.coletar', rid=rec.id) }}" enctype="multipart/form-data">
+    <div class="grade">
+      <label>Arquivo do e-mail ou anexo ({{ ext }})<input type="file" name="email"></label>
+      <label class="largo">Ou cole aqui o texto do e-mail<textarea name="email_colado" rows="4"></textarea></label>
+      <label class="largo">Observações do analista (opcional)<textarea name="observacao" rows="2"></textarea></label>
+    </div>
+    <div class="linha"><button type="submit">Coletar histórico da peça {{ rec.part_number }}</button>
+      <span class="legenda">Só lê os sistemas. Nada é enviado ao Claude nesta etapa.</span></div>
+  </form>
+</section>
+
+{% if pacote %}
+<section class="caixa" id="envio" style="margin-top:16px">
+  <h3 style="margin-top:0">2. Conferir o que será enviado ao Claude</h3>
+  <p class="legenda">Coletado em {{ pacote.coletado_em[:16].replace('T', ' ') }} por {{ pacote.por }}.</p>
+  <table class="tabela">
+    <thead><tr><th>Fonte</th><th>Situação</th><th>Registros</th></tr></thead>
+    <tbody>
+    {% for f in pacote.fontes %}
+    <tr><td>{{ f.fonte }}</td>
+      <td>{% if f.ok %}<span class="sem sem-verde">lida</span>{% else %}<span class="sem sem-vermelho">não lida</span> {{ f.erro }}{% endif %}</td>
+      <td>{{ f.total }}{% if f.total > f.registros|length %} (envia {{ f.registros|length }}){% endif %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if pacote.anexos %}<p>Anexos que vão junto: {% for a in pacote.anexos %}<strong>{{ a.nome }}</strong>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+  <details><summary>Ver o texto completo que será enviado</summary>
+    <pre class="envio">{{ texto }}</pre></details>
+  <form method="post" action="{{ url_for('ia.enviar', rid=rec.id) }}" class="linha">
+    <button type="submit" {{ 'disabled' if not tem_chave }}
+      onclick="this.textContent='Analisando... (pode levar 1-2 minutos)'; this.form.submit(); this.disabled=true; return false;">
+      Enviar ao Claude e gerar sugestões</button>
+  </form>
+</section>
+{% endif %}
+
+{% if resultado %}
+<section class="caixa sugestao" id="sugestoes" style="margin-top:16px">
+  <h3 style="margin-top:0">3. SUGESTÕES do assistente <span class="tag">não confirmadas</span></h3>
+  <p class="legenda">Geradas em {{ resultado.gerado_em[:16].replace('T', ' ') }} ({{ resultado.modelo }}). Nada abaixo está no 8D até você clicar em incluir.</p>
+  <h4>E-mail do cliente</h4><p>{{ resultado.resumo_email }}</p>
+  <h4>O que o histórico mostra</h4><p>{{ resultado.leitura_historico }}</p>
+
+  <h4>Causas sugeridas (Ishikawa)</h4>
+  {% for c in resultado.causas %}
+  <div class="causa">
+    <span class="tag">{{ c.categoria }}</span> {{ c.descricao }}
+    <div class="legenda">Base: {{ c.base }}</div>
+    {% if loop.index0 in resultado.aceitas.causas %}<span class="sem sem-verde">incluída no D4</span>
+    {% else %}<form method="post" action="{{ url_for('ia.aceitar', rid=rec.id, tipo='causas', i=loop.index0) }}" class="linha">
+      <button type="submit">Incluir no D4 (em análise)</button></form>{% endif %}
+  </div>
+  {% endfor %}
+
+  <h4>5 Porquês sugeridos</h4>
+  <p class="legenda">Só referência: copie para a cadeia da causa provável no D4 depois de confirmar com a equipe.</p>
+  <div class="painel">
+    <div><strong>{{ tipos_porque.OCORRENCIA }}</strong><ol>{% for p in resultado.porques_ocorrencia %}<li>{{ p }}</li>{% endfor %}</ol></div>
+    <div><strong>{{ tipos_porque.NAO_DETECCAO }}</strong><ol>{% for p in resultado.porques_nao_deteccao %}<li>{{ p }}</li>{% endfor %}</ol></div>
+  </div>
+
+  <h4>Ações sugeridas</h4>
+  {% for a in resultado.acoes %}
+  <div class="causa" id="acao{{ loop.index0 }}">
+    <span class="tag">{{ a.tipo }}</span> <span class="tag">{{ tipos_porque[a.foco] }}</span> {{ a.descricao }}
+    <div class="legenda">Base: {{ a.base }}</div>
+    {% if loop.index0 in resultado.aceitas.acoes %}<span class="sem sem-verde">incluída no D5</span>
+    {% else %}<form method="post" action="{{ url_for('ia.aceitar', rid=rec.id, tipo='acoes', i=loop.index0) }}" class="linha">
+      <input name="responsavel" placeholder="Responsável" required>
+      <input type="date" name="prazo" min="{{ hoje }}" required>
+      <button type="submit">Incluir no D5</button></form>{% endif %}
+  </div>
+  {% endfor %}
+
+  {% if resultado.dados_faltando %}
+  <h4>Dados que faltaram para uma análise melhor</h4>
+  <ul>{% for d in resultado.dados_faltando %}<li>{{ d }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

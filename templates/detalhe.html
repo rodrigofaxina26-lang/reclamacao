@@ -5,7 +5,8 @@
 {% set fechada = rec.status == 'FECHADA' %}
 <div class="cabecalho">
   <h1>{{ rec.codigo }} <small>{{ rec.cliente.nome }} · PN {{ rec.part_number }} · {{ rec.modo_falha }}</small></h1>
-  <div>Status: <strong>{{ rec.status }}</strong> · D3 {{ sem(rec, 'D3') }} · D4 {{ sem(rec, 'D4') }} · D8 {{ sem(rec, 'D8') }}</div>
+  <div>Status: <strong>{{ rec.status }}</strong> · D3 {{ sem(rec, 'D3') }} · D4 {{ sem(rec, 'D4') }} · D8 {{ sem(rec, 'D8') }}
+    · <a href="{{ url_for('ia.tela', rid=rec.id) }}">🤖 Assistente de análise</a></div>
 </div>
 {% if recorrencias %}
 <div class="msg msg-alerta">RECORRÊNCIA: mesmo PN e modo de falha em

@@ -67,6 +67,8 @@ def create_app(config=None):
     app.register_blueprint(auth_bp)
     app.register_blueprint(rec_bp)
     app.register_blueprint(ana_bp)
+    from assistente import bp as ia_bp
+    app.register_blueprint(ia_bp)
 
     @app.template_filter("dt")
     def _fmt_dt(v):
