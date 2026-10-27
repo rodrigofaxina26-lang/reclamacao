@@ -5,7 +5,7 @@
 <p><a href="{{ url_for('rec.detalhe', rid=rec.id, aba='D4') }}">← voltar para a reclamação</a></p>
 
 {% if not tem_chave %}
-<p class="msg msg-alerta">Chave da API do Claude não instalada. Crie o arquivo <code>instance\anthropic_key.txt</code>
+<p class="msg msg-alerta">Chave da IA ({{ cfg.provedor }}) não instalada. Crie o arquivo <code>instance\{{ arq_chave }}</code>
 com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo sem ela.</p>
 {% endif %}
 
@@ -18,13 +18,13 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
       <label class="largo">Observações do analista (opcional)<textarea name="observacao" rows="2"></textarea></label>
     </div>
     <div class="linha"><button type="submit">Coletar histórico da peça {{ rec.part_number }}</button>
-      <span class="legenda">Só lê os sistemas. Nada é enviado ao Claude nesta etapa.</span></div>
+      <span class="legenda">Só lê os sistemas. Nada é enviado à IA nesta etapa.</span></div>
   </form>
 </section>
 
 {% if pacote %}
 <section class="caixa" id="envio" style="margin-top:16px">
-  <h3 style="margin-top:0">2. Conferir o que será enviado ao Claude</h3>
+  <h3 style="margin-top:0">2. Conferir o que será enviado à IA ({{ cfg.provedor }} · {{ cfg.modelo }})</h3>
   <p class="legenda">Coletado em {{ pacote.coletado_em[:16].replace('T', ' ') }} por {{ pacote.por }}.</p>
   <table class="tabela">
     <thead><tr><th>Fonte</th><th>Situação</th><th>Registros</th></tr></thead>
@@ -42,7 +42,7 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <form method="post" action="{{ url_for('ia.enviar', rid=rec.id) }}" class="linha">
     <button type="submit" {{ 'disabled' if not tem_chave }}
       onclick="this.textContent='Analisando... (pode levar 1-2 minutos)'; this.form.submit(); this.disabled=true; return false;">
-      Enviar ao Claude e gerar sugestões</button>
+      Enviar à IA e gerar sugestões</button>
   </form>
 </section>
 {% endif %}

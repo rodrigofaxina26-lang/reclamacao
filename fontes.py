@@ -19,6 +19,10 @@ PADRAO = {
     "planilha_nc": r"P:\QUALIDADE\03. NÃO CONFORMIDADES\01. EXTERNAS"
                    r"\00. Gerenciamento de Reclamações 2026 - Externas - Rev 1.xlsx",
     "meses_historico": 12,
+    # IA usada pelo assistente: "gemini" (chave em instance/gemini_key.txt)
+    # ou "claude" (chave em instance/anthropic_key.txt)
+    "provedor": "gemini",
+    "modelo": "gemini-flash-latest",
 }
 TIMEOUT = 15
 MAX_REGISTROS = 40   # por fonte, para não estourar o pacote enviado ao Claude

@@ -1,7 +1,7 @@
-"""Fase 3: assistente de análise com o Claude.
+"""Fase 3: assistente de análise com IA (Gemini por padrão; Claude opcional).
 
 Fluxo: anexar e-mail do cliente -> coletar histórico nos outros sistemas -> mostrar EXATAMENTE o
-que será enviado -> usuário confirma -> Claude devolve SUGESTÕES -> usuário aceita uma a uma.
+que será enviado -> usuário confirma -> a IA devolve SUGESTÕES -> usuário aceita uma a uma.
 Nada é gravado no 8D sem clique do usuário; tudo que é aceito vai para o Historico.
 Arquivos da análise ficam em instance/analises/<id>/ (fora do banco: são rascunho, não 8D).
 """
@@ -23,7 +23,6 @@ from servicos import registrar, write_lock
 
 bp = Blueprint("ia", __name__)
 
-MODELO = "claude-opus-5-5"
 EXT_EMAIL = {".eml", ".pdf", ".txt", ".png", ".jpg", ".jpeg"}
 MIDIA = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}
 
@@ -97,12 +96,78 @@ def _gravar(rid, nome, dados):
         json.dump(dados, f, ensure_ascii=False, indent=1, default=str)
 
 
-def _chave_api():
-    caminho = os.path.join(current_app.instance_path, "anthropic_key.txt")
+ARQ_CHAVE = {"gemini": "gemini_key.txt", "claude": "anthropic_key.txt"}
+
+
+def _config():
+    return fontes.carregar_config(current_app.instance_path)
+
+
+def _chave_api(cfg):
+    caminho = os.path.join(current_app.instance_path, ARQ_CHAVE.get(cfg["provedor"], "?"))
     if os.path.exists(caminho):
         with open(caminho, encoding="utf-8") as f:
             return f.read().strip() or None
-    return os.environ.get("ANTHROPIC_API_KEY")
+    return None
+
+
+class ErroIA(Exception):
+    pass
+
+
+def _chamar_gemini(cfg, chave, anexos, texto):
+    from google import genai
+    from google.genai import errors, types
+
+    partes = [types.Part.from_bytes(data=dados, mime_type=tipo) for tipo, dados in anexos] + [texto]
+    cliente = genai.Client(api_key=chave)  # manter a referência: o SDK fecha a conexão se o objeto sumir
+    try:
+        resp = cliente.models.generate_content(
+            model=cfg["modelo"], contents=partes,
+            config=types.GenerateContentConfig(system_instruction=INSTRUCOES,
+                                               response_mime_type="application/json",
+                                               response_json_schema=ESQUEMA))
+    except errors.ClientError as e:
+        if e.code == 429:
+            raise ErroIA("Limite da camada gratuita do Gemini atingido. Aguarde alguns minutos e tente de novo.")
+        raise ErroIA(f"Gemini recusou o pedido ({e.code}): {e.message}. Confira a chave e o modelo em instance/fontes.json.")
+    except errors.APIError as e:
+        raise ErroIA(f"Erro no Gemini ({e.code}): {e.message}")
+    except Exception as e:  # rede, proxy, timeout
+        raise ErroIA(f"Sem conexão com o Gemini (internet/proxy): {e}")
+    if not resp.text:
+        raise ErroIA("O Gemini não devolveu resposta (pode ter bloqueado o conteúdo). Tente de novo.")
+    u = resp.usage_metadata
+    return resp.text, cfg["modelo"], {"entrada": u.prompt_token_count if u else None,
+                                      "saida": u.candidates_token_count if u else None}
+
+
+def _chamar_claude(cfg, chave, anexos, texto):
+    import anthropic
+
+    conteudo = [{"type": "document" if tipo == "application/pdf" else "image",
+                 "source": {"type": "base64", "media_type": tipo,
+                            "data": base64.standard_b64encode(dados).decode()}} for tipo, dados in anexos]
+    conteudo.append({"type": "text", "text": texto})
+    try:
+        resp = anthropic.Anthropic(api_key=chave).beta.messages.create(
+            model=cfg["modelo"], max_tokens=16000, system=INSTRUCOES,
+            output_config={"effort": "high", "format": {"type": "json_schema", "schema": ESQUEMA}},
+            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
+            messages=[{"role": "user", "content": conteudo}])
+    except anthropic.AuthenticationError:
+        raise ErroIA("Chave da API do Claude inválida. Confira instance/anthropic_key.txt.")
+    except anthropic.APIConnectionError:
+        raise ErroIA("Sem conexão com a API do Claude (internet/proxy).")
+    except anthropic.APIStatusError as e:
+        raise ErroIA(f"Erro da API do Claude ({e.status_code}): {e.message}")
+    if resp.stop_reason != "end_turn":
+        raise ErroIA(f"O Claude não concluiu a resposta (motivo: {resp.stop_reason}). Tente de novo.")
+    return (next(b.text for b in resp.content if b.type == "text"), resp.model,
+            {"entrada": resp.usage.input_tokens, "saida": resp.usage.output_tokens})
+
+
+PROVEDORES = {"gemini": _chamar_gemini, "claude": _chamar_claude}
 
 
 # ---------------- leitura do e-mail ----------------
@@ -158,8 +223,10 @@ def tela(rid):
     rec = db.get_or_404(Reclamacao, rid)
     pacote, resultado = _ler(rid, "pacote.json"), _ler(rid, "resultado.json")
     texto = _montar_texto(rec, pacote) if pacote else ""
+    cfg = _config()
     return render_template("assistente.html", rec=rec, pacote=pacote, texto=texto, resultado=resultado,
-                           tem_chave=bool(_chave_api()), ext=", ".join(sorted(EXT_EMAIL)),
+                           tem_chave=bool(_chave_api(cfg)), cfg=cfg, arq_chave=ARQ_CHAVE.get(cfg["provedor"]),
+                           ext=", ".join(sorted(EXT_EMAIL)),
                            tipos_porque=TIPOS_PORQUE, hoje=datetime.now().date())
 
 
@@ -192,54 +259,38 @@ def coletar(rid):
     pacote["fontes"] = fontes.coletar(rec.part_number, current_app.instance_path)
     _gravar(rid, "pacote.json", pacote)
     with write_lock:
-        registrar(rid, "Assistente · Histórico coletado nos sistemas (ainda não enviado ao Claude)")
+        registrar(rid, "Assistente · Histórico coletado nos sistemas (ainda não enviado à IA)")
         db.session.commit()
     return redirect(url_for("ia.tela", rid=rid) + "#envio")
 
 
 @bp.route("/<int:rid>/assistente/enviar", methods=["POST"])
 def enviar(rid):
-    import anthropic
-
     rec = db.get_or_404(Reclamacao, rid)
     pacote = _ler(rid, "pacote.json")
-    chave = _chave_api()
-    if not pacote or not chave:
-        flash("Colete os dados primeiro e confira se a chave da API está instalada.", "erro")
+    cfg = _config()
+    chave = _chave_api(cfg)
+    if not pacote or not chave or cfg["provedor"] not in PROVEDORES:
+        flash("Colete os dados primeiro e confira se a chave da IA está instalada.", "erro")
         return redirect(url_for("ia.tela", rid=rid))
-    conteudo = []
+    anexos = []
     for a in pacote["anexos"]:
         with open(os.path.join(_pasta(rid), a["nome"]), "rb") as f:
-            dados = base64.standard_b64encode(f.read()).decode()
-        tipo_bloco = "document" if a["tipo"] == "application/pdf" else "image"
-        conteudo.append({"type": tipo_bloco, "source": {"type": "base64", "media_type": a["tipo"], "data": dados}})
-    conteudo.append({"type": "text", "text": _montar_texto(rec, pacote)})
+            anexos.append((a["tipo"], f.read()))
     try:
-        resp = anthropic.Anthropic(api_key=chave).beta.messages.create(
-            model=MODELO, max_tokens=16000, system=INSTRUCOES,
-            output_config={"effort": "high", "format": {"type": "json_schema", "schema": ESQUEMA}},
-            betas=["server-side-fallback-2026-07-01"], fallbacks="default",
-            messages=[{"role": "user", "content": conteudo}])
-    except anthropic.AuthenticationError:
-        flash("Chave da API inválida. Confira instance/anthropic_key.txt.", "erro")
+        texto, modelo, tokens = PROVEDORES[cfg["provedor"]](cfg, chave, anexos, _montar_texto(rec, pacote))
+        resultado = json.loads(texto)
+    except ErroIA as e:
+        flash(str(e), "erro")
         return redirect(url_for("ia.tela", rid=rid))
-    except anthropic.APIConnectionError:
-        flash("Sem conexão com a API do Claude (internet/proxy).", "erro")
+    except ValueError:
+        flash("A IA devolveu uma resposta fora do formato esperado. Tente de novo.", "erro")
         return redirect(url_for("ia.tela", rid=rid))
-    except anthropic.APIStatusError as e:
-        flash(f"Erro da API do Claude ({e.status_code}): {e.message}", "erro")
-        return redirect(url_for("ia.tela", rid=rid))
-    if resp.stop_reason != "end_turn":
-        flash(f"O Claude não concluiu a resposta (motivo: {resp.stop_reason}). Tente de novo.", "erro")
-        return redirect(url_for("ia.tela", rid=rid))
-    texto = next(b.text for b in resp.content if b.type == "text")
-    resultado = json.loads(texto)
-    resultado.update(gerado_em=datetime.now(), por=session.get("usuario"), modelo=resp.model,
-                     aceitas={"causas": [], "acoes": []},
-                     tokens={"entrada": resp.usage.input_tokens, "saida": resp.usage.output_tokens})
+    resultado.update(gerado_em=datetime.now(), por=session.get("usuario"), modelo=modelo,
+                     aceitas={"causas": [], "acoes": []}, tokens=tokens)
     _gravar(rid, "resultado.json", resultado)
     with write_lock:
-        registrar(rid, f"Assistente · Dados enviados ao Claude ({resp.model}); sugestões recebidas para revisão")
+        registrar(rid, f"Assistente · Dados enviados à IA ({modelo}); sugestões recebidas para revisão")
         db.session.commit()
     return redirect(url_for("ia.tela", rid=rid) + "#sugestoes")
 
