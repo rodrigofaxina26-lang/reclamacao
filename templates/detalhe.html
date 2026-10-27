@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% from "_semaforo.html" import sem %}
+{% block titulo %}{{ rec.codigo }}{% endblock %}
+{% block conteudo %}
+{% set fechada = rec.status == 'FECHADA' %}
+<div class="cabecalho">
+  <h1>{{ rec.codigo }} <small>{{ rec.cliente.nome }} · PN {{ rec.part_number }} · {{ rec.modo_falha }}</small></h1>
+  <div>Status: <strong>{{ rec.status }}</strong> · D3 {{ sem(rec, 'D3') }} · D4 {{ sem(rec, 'D4') }} · D8 {{ sem(rec, 'D8') }}</div>
+</div>
+{% if recorrencias %}
+<div class="msg msg-alerta">RECORRÊNCIA: mesmo PN e modo de falha em
+  {% for r in recorrencias %}<a href="{{ url_for('rec.detalhe', rid=r.id) }}">{{ r.codigo }}</a> ({{ r.status }}){{ ', ' if not loop.last }}{% endfor %}
+</div>
+{% endif %}
+
+<nav class="abas">
+  {% for id, nome in abas %}<a href="{{ url_for('rec.detalhe', rid=rec.id, aba=id) }}" class="{{ 'ativa' if id == aba }}">{{ nome }}</a>{% endfor %}
+</nav>
+
+<section class="caixa">
+{% if aba == 'D1' %}
+  <table class="tabela"><thead><tr><th>Nome</th><th>Função</th><th>Líder</th><th></th></tr></thead><tbody>
+  {% for m in rec.equipe %}
+    <tr><td>{{ m.nome }}</td><td>{{ m.funcao or '' }}</td><td>{{ 'Sim' if m.lider }}</td>
+    <td>{% if not fechada %}<form method="post" action="{{ url_for('rec.equipe_remover', rid=rec.id, mid=m.id) }}" onsubmit="return confirm('Remover este membro?')"><button class="link">remover</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="4" class="vazio">Nenhum membro.</td></tr>{% endfor %}
+  </tbody></table>
+  {% if not fechada %}
+  <form method="post" action="{{ url_for('rec.equipe_add', rid=rec.id) }}" class="linha">
+    <input name="nome" placeholder="Nome" required> <input name="funcao" placeholder="Função">
+    <label class="check"><input type="checkbox" name="lider"> Líder</label>
+    <button>Incluir</button>
+  </form>
+  {% endif %}
+
+{% elif aba in ('D5', 'D6') %}
+  <p class="nota">Cadastro de ações (foco ocorrência / não detecção, responsável, prazo, status) entra na Fase 2.</p>
+  <table class="tabela"><thead><tr><th>Tipo</th><th>Foco</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Status</th></tr></thead><tbody>
+  {% for a in rec.acoes %}<tr><td>{{ a.tipo }}</td><td>{{ a.foco }}</td><td>{{ a.descricao }}</td><td>{{ a.responsavel }}</td><td>{{ a.prazo.strftime('%d/%m/%Y') if a.prazo }}</td><td>{{ a.status }}</td></tr>
+  {% else %}<tr><td colspan="6" class="vazio">Nenhuma ação.</td></tr>{% endfor %}
+  </tbody></table>
+
+{% elif aba == 'HIST' %}
+  <table class="tabela"><thead><tr><th>Quando</th><th>Usuário</th><th>Alteração</th></tr></thead><tbody>
+  {% for h in historico %}<tr><td class="nowrap">{{ h.momento|dt }}</td><td>{{ h.usuario }}</td><td>{{ h.acao }}</td></tr>{% endfor %}
+  </tbody></table>
+{% endif %}
+
+{% if campos %}
+  {% if aba == 'D3' %}<p class="nota">Prazo de contenção: {{ rec.prazo('D3')|dt }}</p>{% endif %}
+  {% if aba == 'D4' %}<p class="nota">Prazo de causa raiz: {{ rec.prazo('D4')|dt }}. Ishikawa (6M) e 5 Porquês entram na Fase 2.</p>{% endif %}
+  <form method="post" action="{{ url_for('rec.salvar', rid=rec.id, aba=aba) }}">
+  <fieldset class="grade" {{ 'disabled' if fechada }}>
+  {% for nome, rotulo, tipo in campos %}
+    {% set v = rec|attr(nome) %}
+    {% if tipo == 'textarea' %}
+      <label class="largo">{{ rotulo }}<textarea name="{{ nome }}" rows="3">{{ v or '' }}</textarea></label>
+    {% elif tipo == 'bool' %}
+      <label class="check largo"><input type="checkbox" name="{{ nome }}" {{ 'checked' if v }}> {{ rotulo }}</label>
+    {% elif tipo == 'tri' %}
+      <label>{{ rotulo }}<select name="{{ nome }}"><option value="">Não avaliado</option>
+        <option value="sim" {{ 'selected' if v == true }}>Sim</option><option value="nao" {{ 'selected' if v == false }}>Não</option></select></label>
+    {% elif tipo == 'status' %}
+      <label>{{ rotulo }}<select name="{{ nome }}">
+        {% for s in status_editaveis %}<option {{ 'selected' if v == s }}>{{ s }}</option>{% endfor %}
+        {% if fechada %}<option selected>FECHADA</option>{% endif %}</select></label>
+    {% elif tipo == 'datetime' %}
+      <label>{{ rotulo }}<input type="datetime-local" name="{{ nome }}" value="{{ v|dtinput }}"></label>
+    {% elif tipo in ('int', 'int0') %}
+      <label>{{ rotulo }}<input type="number" min="0" name="{{ nome }}" value="{{ v if v is not none }}"></label>
+    {% else %}
+      <label>{{ rotulo }}<input name="{{ nome }}" value="{{ v or '' }}"></label>
+    {% endif %}
+  {% endfor %}
+  <div class="largo"><button type="submit">Salvar {{ aba }}</button></div>
+  </fieldset>
+  </form>
+{% endif %}
+
+{% if aba == 'D8' %}
+  {% set pend = rec.pendencias_para_fechar() %}
+  <h3>Pendências para fechar o 8D</h3>
+  {% if pend %}<ul class="pendencias">{% for p in pend %}<li>{{ p }}</li>{% endfor %}</ul>
+  {% else %}<p>Nenhuma pendência.</p>{% endif %}
+  <button disabled title="Disponível na Fase 2">Fechar 8D</button>
+{% endif %}
+
+{% if aba != 'HIST' %}
+  <h3>Evidências ({{ aba }})</h3>
+  <ul>{% for e in evidencias %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}</li>
+  {% else %}<li class="vazio">Nenhuma.</li>{% endfor %}</ul>
+  {% if not fechada %}
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('rec.evidencia_upload', rid=rec.id, aba=aba) }}" class="linha">
+    <input type="file" name="arquivo" required> <input name="descricao" placeholder="Descrição"> <button>Anexar</button>
+  </form>
+  {% endif %}
+{% endif %}
+</section>
+{% endblock %}

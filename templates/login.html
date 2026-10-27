@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block titulo %}Entrar{% endblock %}
+{% block conteudo %}
+<form method="post" class="caixa login">
+  <h1>Entrar</h1>
+  <label>Usuário <input name="login" required autofocus></label>
+  <label>Senha <input name="senha" type="password" required></label>
+  <button type="submit">Entrar</button>
+</form>
+{% endblock %}

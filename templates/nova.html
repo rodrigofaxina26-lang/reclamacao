@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block titulo %}Nova reclamação{% endblock %}
+{% block conteudo %}
+<h1>Abrir reclamação</h1>
+<form method="post" class="caixa grade">
+  <label>Cliente *
+    <select name="cliente_id" required><option value=""></option>
+    {% for c in clientes %}<option value="{{ c.id }}" {{ 'selected' if f.get('cliente_id') == c.id|string }}>{{ c.nome }}</option>{% endfor %}
+    </select></label>
+  <label>Nº da reclamação no cliente <input name="num_reclamacao_cliente" value="{{ f.get('num_reclamacao_cliente', '') }}"></label>
+  <label>Part number * <input name="part_number" id="pn" required value="{{ f.get('part_number', '') }}"></label>
+  <label>Lote <input name="lote" value="{{ f.get('lote', '') }}"></label>
+  <label>Qtd. suspeita <input name="qtd_suspeita" type="number" min="0" value="{{ f.get('qtd_suspeita', '') }}"></label>
+  <label>Data de recebimento <input name="data_recebimento" type="datetime-local" value="{{ f.get('data_recebimento') or agora|dtinput }}"></label>
+  <label class="largo">Modo de falha * <input name="modo_falha" id="modo" required value="{{ f.get('modo_falha', '') }}"></label>
+  <div id="alerta-recorrencia" class="msg msg-alerta largo" hidden></div>
+  <div class="largo"><button type="submit">Abrir reclamação</button></div>
+</form>
+<script>
+// avisa recorrência antes de salvar (mesmo PN + modo de falha)
+(function () {
+  var pn = document.getElementById("pn"), modo = document.getElementById("modo"),
+      caixa = document.getElementById("alerta-recorrencia");
+  function checar() {
+    if (!pn.value.trim() || !modo.value.trim()) { caixa.hidden = true; return; }
+    fetch("{{ url_for('rec.api_recorrencias') }}?pn=" + encodeURIComponent(pn.value) + "&modo=" + encodeURIComponent(modo.value))
+      .then(function (r) { return r.json(); })
+      .then(function (lista) {
+        caixa.hidden = !lista.length;
+        caixa.textContent = "RECORRÊNCIA: este PN e modo de falha já foram reclamados em " +
+          lista.map(function (x) { return x.codigo + " (" + x.cliente + ", " + x.data + ", " + x.status + ")"; }).join("; ");
+      });
+  }
+  pn.addEventListener("change", checar);
+  modo.addEventListener("change", checar);
+})();
+</script>
+{% endblock %}

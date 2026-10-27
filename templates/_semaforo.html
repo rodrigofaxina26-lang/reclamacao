@@ -1,0 +1,1 @@
+{% macro sem(rec, etapa) %}{% set s = rec.semaforo(etapa) %}<span class="sem sem-{{ s }}" title="Prazo {{ etapa }}: {{ rec.prazo(etapa)|dt }}">{{ {'verde': 'No prazo', 'amarelo': 'Atenção', 'vermelho': 'Vencido', 'atrasada': 'Concluída c/ atraso'}[s] }}</span>{% endmacro %}

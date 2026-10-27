@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Reclamações 8D{% endblock %} · Pro-Metal</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header class="topo">
+  <a class="marca" href="{{ url_for('rec.lista') }}">Pro-Metal · Reclamações 8D</a>
+  {% if session.usuario %}
+  <nav>
+    <a href="{{ url_for('rec.lista') }}">Reclamações</a>
+    <a href="{{ url_for('rec.nova') }}">+ Nova</a>
+    <span class="usuario">{{ session.nome }}</span>
+    <a href="{{ url_for('auth.logout') }}">Sair</a>
+  </nav>
+  {% endif %}
+</header>
+<main>
+  {% for cat, msg in get_flashed_messages(with_categories=true) %}
+  <div class="msg msg-{{ cat }}">{{ msg }}</div>
+  {% endfor %}
+  {% block conteudo %}{% endblock %}
+</main>
+</body>
+</html>
