@@ -43,6 +43,8 @@ Regras:
 - Se uma ação parecida já foi tomada antes para a mesma peça/modo de falha e o problema voltou,
   aponte isso: a ação anterior não foi eficaz.
 - As fontes marcadas com erro não foram lidas; não tire conclusões sobre elas.
+- Código Pro-Metal: final "A" = peça final entregue ao cliente; "B", "B1", "C1"... = componentes
+  estampados que formam a peça (a matéria-prima é dos componentes).
 - Na planilha de NC, cada etapa vem com semáforo: VERMELHO (R) quer dizer que a etapa não foi
   realizada ou está atrasada.
 - Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + """.

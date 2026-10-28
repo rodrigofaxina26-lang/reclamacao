@@ -164,27 +164,31 @@ def materia_prima(pn, cfg):
     """Certificados e CEP das bobinas (ensaios mecânicos e química) da MP usada na peça."""
     nome = "Matéria-prima (certificados e CEP)"
     try:
-        # o sistema de MP cadastra a peça com outra revisão (ex.: BS10073B para a BS10073A):
-        # se o código exato não existir lá, usa a revisão com o mesmo código base
+        # Código Pro-Metal: final "A" = peça final; "B", "B1", "C1"... = componentes estampados.
+        # A MP entra nos componentes, então para a peça final buscamos todos os componentes dela
+        # (mesmo código base). Ex.: FV10196A -> FV10196B1 e FV10196C1.
         pecas = json.loads(_get(f"{cfg['materia_prima']}/api/info")).get("pecas", [])
-        if pn not in pecas:
-            base = re.sub(r"[A-Z]\d*$", "", pn)
-            parecidas = sorted(p for p in pecas if re.sub(r"[A-Z]\d*$", "", p) == base)
-            if not parecidas:
-                return _resultado(nome)
-            pn = parecidas[0]
-            nome += f" - peça {pn} (revisão cadastrada no sistema de MP)"
-        cep = json.loads(_get(f"{cfg['materia_prima']}/api/cep", {"peca": pn, "periodo": "tudo"}))
-        regs = [{"tipo": "estatística CEP", **e} for e in cep.get("estatisticas", [])]
-        if cep.get("alerta_clc"):
-            regs.append({"tipo": "alerta de estampagem (CLC0)", "detalhe": cep["alerta_clc"]})
-        bobinas = sorted(cep.get("bobinas", []), key=lambda b: b.get("id", 0), reverse=True)
-        regs += [{"tipo": "bobina", **{k: b[k] for k in CAMPOS_BOBINA if b.get(k) not in (None, "")}}
-                 for b in bobinas[:20]]
-        certs = json.loads(_get(f"{cfg['materia_prima']}/api/busca", {"peca": pn}))
-        regs += [{"tipo": "certificado", **{k: c[k] for k in ("codigo_mp", "fornecedor", "material", "lote",
-                                                             "num_certificado", "nf", "data") if c.get(k)}}
-                 for c in certs[:10]]
+        base = re.sub(r"[A-Z]\d*$", "", pn)
+        alvos = sorted({pn} & set(pecas)) + sorted(p for p in pecas if p != pn and re.sub(r"[A-Z]\d*$", "", p) == base)
+        if not alvos:
+            return _resultado(nome)
+        if alvos != [pn]:
+            nome += f" - peças consultadas: {', '.join(alvos)}"
+        regs = []
+        for peca in alvos[:4]:
+            cep = json.loads(_get(f"{cfg['materia_prima']}/api/cep", {"peca": peca, "periodo": "tudo"}))
+            regs += [{"tipo": "estatística CEP", "componente": peca, **e} for e in cep.get("estatisticas", [])]
+            if cep.get("alerta_clc"):
+                regs.append({"tipo": "alerta de estampagem (CLC0)", "componente": peca, "detalhe": cep["alerta_clc"]})
+            bobinas = sorted(cep.get("bobinas", []), key=lambda b: b.get("id", 0), reverse=True)
+            regs += [{"tipo": "bobina", "componente": peca,
+                      **{k: b[k] for k in CAMPOS_BOBINA if b.get(k) not in (None, "")}}
+                     for b in bobinas[:20 // len(alvos[:4])]]
+            certs = json.loads(_get(f"{cfg['materia_prima']}/api/busca", {"peca": peca}))
+            regs += [{"tipo": "certificado", "componente": peca,
+                      **{k: c[k] for k in ("codigo_mp", "fornecedor", "material", "lote",
+                                          "num_certificado", "nf", "data") if c.get(k)}}
+                     for c in certs[:5]]
         return _resultado(nome, regs)
     except Exception as e:
         return _resultado(nome, erro=str(e))
