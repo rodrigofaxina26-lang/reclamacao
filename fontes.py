@@ -277,7 +277,7 @@ def planilha_nc(pn, cfg):
 
 def faturamento(pn, cfg):
     """NFs da peça (aba REALIZADO PROTHEUS): data, NF e quantidade - sem preço/valor.
-    Serve para ponto de corte (NF), quantidade em trânsito/no cliente (D3) e PPM."""
+    Serve para ponto de corte (NF) e quantidade em trânsito/no cliente (D3)."""
     nome = "Faturamento (NFs emitidas)"
     try:
         import openpyxl
@@ -301,8 +301,11 @@ def faturamento(pn, cfg):
         regs = [{"tipo": "total faturado no período", "desde": inicio.strftime("%d/%m/%Y"),
                  "peças": sum(nfs.values()), "notas fiscais": len(nfs)}] if nfs else []
         regs += [{"tipo": "faturado no mês", "mês": m, "peças": q} for m, q in por_mes.items()]
-        regs += [{"tipo": "NF", "data": d.strftime("%d/%m/%Y"), "nf": nf, "peças": q}
-                 for (d, nf), q in sorted(nfs.items(), reverse=True)[:25]]
+        depois = 0   # peças faturadas depois de cada NF (já somadas, a IA não precisa fazer a conta)
+        for (d, nf), q in sorted(nfs.items(), reverse=True)[:25]:
+            regs.append({"tipo": "NF", "data": d.strftime("%d/%m/%Y"), "nf": nf, "peças": q,
+                         "peças faturadas depois desta NF": depois})
+            depois += q
         return _resultado(nome, regs)
     except Exception as e:
         return _resultado(nome, erro=str(e))

@@ -54,9 +54,16 @@ Regras:
   defeito e onde o PFMEA/plano de controle precisa ser revisado. Cite a operação (OP) quando der.
   Esses documentos COMPLEMENTAM o histórico: continue usando os dados de matéria-prima, cartões,
   refugo e reclamações anteriores como base principal das causas.
-- O faturamento traz as NFs da peça (data, NF, quantidade). Use para sugerir o ponto de corte
-  (NF), estimar peças em trânsito/no cliente na contenção e calcular PPM (peças reclamadas ÷
-  peças faturadas no período), sempre mostrando a conta.
+- O faturamento traz as NFs da peça (data, NF, quantidade). Não calcule PPM. Use as NFs na
+  contenção ("contencao") assim:
+  * identifique a NF citada na reclamação (ou, se não houver, a NF mais próxima da data do lote);
+  * liste as NFs emitidas DEPOIS dela (número, data e quantidade) e some as quantidades: são as
+    peças possivelmente afetadas que estão em trânsito ou no estoque do cliente e precisam ser
+    selecionadas/bloqueadas. NÃO some você mesmo: use o campo "peças faturadas depois desta NF"
+    da NF da reclamação, que já vem calculado;
+  * o ponto de corte é a primeira NF emitida DEPOIS da contenção interna (peças 100%
+    inspecionadas); diga isso nessa ordem, sem inverter ("a partir da NF X as peças saem
+    selecionadas"). Se a contenção ainda não ocorreu, diga que o ponto de corte será a próxima NF.
 - Na planilha de NC, cada etapa vem com semáforo: VERMELHO (R) quer dizer que a etapa não foi
   realizada ou está atrasada.
 - Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + """.
@@ -73,6 +80,10 @@ Regras:
   falha da reclamação (cartões, refugo, alertas, bobinas/certificados, reclamações anteriores):
   data (dd/mm/aaaa), fonte, o que mostra e o "link" do registro COPIADO EXATAMENTE como veio
   (ou "" se o registro não tiver link). Inclua as datas também no texto de "base" das causas.
+  OBRIGATÓRIO: se o Refugo tiver um registro "datas do modo de falha" de modo igual ou parecido
+  com o da reclamação (ex.: trinca → TRINCAS/ESTIRAMENTO), crie na linha do tempo uma entrada
+  com a "primeira data" e outra com a "última data" desse registro (fonte "Refugo", com
+  quantidade, máquina e turno) e use o "link" do registro.
 - Só fale de um documento (PFMEA, plano de controle, certificado) se ele estiver nos dados ou
   anexado. Não afirme o que um documento contém sem tê-lo recebido.
 - Em "d2", preencha a descrição do problema (5W2H) apenas com o que estiver no e-mail/anexo;
