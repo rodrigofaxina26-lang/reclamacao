@@ -10,6 +10,7 @@ import email
 import email.policy
 import json
 import os
+import shutil
 import time
 from datetime import datetime
 
@@ -45,6 +46,11 @@ Regras:
 - As fontes marcadas com erro não foram lidas; não tire conclusões sobre elas.
 - Código Pro-Metal: final "A" = peça final entregue ao cliente; "B", "B1", "C1"... = componentes
   estampados que formam a peça (a matéria-prima é dos componentes).
+- PFMEA e planos de controle da peça (APQP) podem vir anexados em PDF. Use-os para dizer se o
+  modo de falha estava previsto no PFMEA (e com que S/O/D), qual controle deveria ter detectado o
+  defeito e onde o PFMEA/plano de controle precisa ser revisado. Cite a operação (OP) quando der.
+  Esses documentos COMPLEMENTAM o histórico: continue usando os dados de matéria-prima, cartões,
+  refugo e reclamações anteriores como base principal das causas.
 - Na planilha de NC, cada etapa vem com semáforo: VERMELHO (R) quer dizer que a etapa não foi
   realizada ou está atrasada.
 - Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + """.
@@ -147,7 +153,8 @@ def _chamar_gemini(cfg, chave, anexos, texto):
     from google.genai import errors, types
 
     partes = [types.Part.from_bytes(data=dados, mime_type=tipo) for tipo, dados in anexos] + [texto]
-    cliente = genai.Client(api_key=chave)  # manter a referência: o SDK fecha a conexão se o objeto sumir
+    # limite de 4 min por tentativa (em ms): a página espera a resposta, não pode ficar presa
+    cliente = genai.Client(api_key=chave, http_options=types.HttpOptions(timeout=240_000))  # manter a referência: o SDK fecha a conexão se o objeto sumir
     # modelo principal sobrecarregado (503) ou sem cota (429) -> tenta os modelos reserva, em ordem
     # o principal entra 2x: a sobrecarga do Google costuma passar em segundos
     modelos = [cfg["modelo"]] * 2 + [m for m in cfg.get("modelos_reserva", []) if m != cfg["modelo"]]
@@ -295,6 +302,13 @@ def coletar(rid):
     if colado:
         pacote["email_texto"] = (pacote["email_texto"] + "\n\n" + colado).strip()
     pacote["fontes"] = fontes.coletar(rec.part_number, current_app.instance_path)
+    # documentos de outras fontes (PFMEA/plano de controle do APQP) vão junto como anexo:
+    # copia para a pasta da análise para o envio usar exatamente o que foi conferido
+    for f in pacote["fontes"]:
+        for doc in f.pop("anexar", []):
+            n = secure_filename(os.path.basename(doc["caminho"])) or "documento.pdf"
+            shutil.copyfile(doc["caminho"], os.path.join(pasta, n))
+            pacote["anexos"].append({"nome": n, "tipo": "application/pdf", "origem": f"{doc['tipo']} (APQP)"})
     _gravar(rid, "pacote.json", pacote)
     with write_lock:
         registrar(rid, "Assistente · Histórico coletado nos sistemas (ainda não enviado à IA)")
@@ -312,7 +326,10 @@ def enviar(rid):
         flash("Colete os dados primeiro e confira se a chave da IA está instalada.", "erro")
         return redirect(url_for("ia.tela", rid=rid))
     anexos = []
+    marcados = set(request.form.getlist("anexo"))
     for a in pacote["anexos"]:
+        if a["nome"] not in marcados:
+            continue
         with open(os.path.join(_pasta(rid), a["nome"]), "rb") as f:
             anexos.append((a["tipo"], f.read()))
     try:

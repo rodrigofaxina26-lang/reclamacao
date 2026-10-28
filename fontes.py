@@ -17,6 +17,7 @@ PADRAO = {
     "refugo": "http://192.168.1.150:5003",
     "falhas": "http://192.168.1.150:5000",
     "materia_prima": "http://192.168.1.150:8765",
+    "apqp": r"R:\APQP",
     "planilha_nc": r"P:\QUALIDADE\03. NÃO CONFORMIDADES\01. EXTERNAS"
                    r"\00. Gerenciamento de Reclamações 2026 - Externas - Rev 1.xlsx",
     "meses_historico": 12,
@@ -248,7 +249,86 @@ def planilha_nc(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
-FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc]
+MAX_PDF_APQP = 6 * 1024 * 1024   # soma dos PDFs do APQP anexados (limite de envio à IA)
+
+
+def _projetos_apqp(pn, cfg):
+    """Linhas do índice geral APQP para a peça (coluna Totvs), da mais recente para a mais antiga."""
+    import openpyxl
+    wb = openpyxl.load_workbook(os.path.join(cfg["apqp"], "ORIGINAL - INDICE GERAL APQP.xlsx"),
+                                read_only=True, data_only=True)
+    base, achados = re.sub(r"[A-Z]\d*$", "", pn), []
+    for l in wb["Índice"].iter_rows(min_row=8, values_only=True):
+        totvs = str(l[7] or "").strip().upper()
+        if totvs and re.sub(r"[A-Z]\d*$", "", totvs) == base and l[1] and l[3]:
+            achados.append({"nº": l[1], "cliente": _txt(l[2]), "ano": _txt(l[3]), "responsável": _txt(l[4]),
+                            "descrição": _txt(l[5]), "código debx": _txt(l[6]), "código totvs": totvs,
+                            "projeto": _txt(l[8]), "aprovação ppap": _txt(l[9])})
+    wb.close()
+    return sorted(achados, key=lambda a: (a["código totvs"] != pn.upper(), -int(float(a["ano"] or 0))))
+
+
+def _docs_apqp(pasta, debx):
+    """PFMEA e plano de controle de produção mais recentes da peça dentro da pasta do projeto."""
+    docs = []
+    for raiz, _, arquivos in os.walk(pasta):
+        if "obsolet" in raiz.lower():
+            continue
+        for a in arquivos:
+            caminho = os.path.join(raiz, a)
+            if not a.lower().endswith(".pdf") or debx.upper() not in caminho.upper():
+                continue
+            nome = a.lower()
+            if "pfmea" in nome and "declara" not in nome:
+                tipo = "PFMEA"
+            elif "plano de controle" in caminho.lower() and "contenção" not in nome and "pré" not in raiz.lower():
+                tipo = "Plano de controle"
+            else:
+                continue
+            docs.append({"tipo": tipo, "caminho": caminho, "mtime": os.path.getmtime(caminho),
+                         "tamanho": os.path.getsize(caminho), "pasta": raiz})
+    escolhidos = []
+    for tipo in ("PFMEA", "Plano de controle"):
+        do_tipo = [d for d in docs if d["tipo"] == tipo]
+        if not do_tipo:
+            continue
+        # a revisão mais recente é a pasta onde está o arquivo mais novo daquele tipo
+        pasta_nova = max(do_tipo, key=lambda d: d["mtime"])["pasta"]
+        escolhidos += sorted((d for d in do_tipo if d["pasta"] == pasta_nova), key=lambda d: d["caminho"])
+    return escolhidos
+
+
+def apqp(pn, cfg):
+    """Projeto APQP da peça (R:\\APQP): dados do índice + PFMEA e plano de controle em PDF."""
+    nome = "APQP (PFMEA e plano de controle)"
+    try:
+        projetos = _projetos_apqp(pn, cfg)
+        if not projetos:
+            return _resultado(nome)
+        regs, anexos, total = [], [], 0
+        for p in projetos:
+            pasta_ano = os.path.join(cfg["apqp"], p["ano"])
+            pastas = [d for d in (os.listdir(pasta_ano) if os.path.isdir(pasta_ano) else [])
+                      if re.match(rf"0*{int(float(p['nº']))}(\s*-|\s|$)", d)]
+            regs.append({"tipo": "projeto APQP", **p, "pasta": pastas[0] if pastas else "não encontrada"})
+            if not pastas or anexos:          # documentos só do projeto mais recente que tiver
+                continue
+            for d in _docs_apqp(os.path.join(pasta_ano, pastas[0]), p["código debx"]):
+                if total + d["tamanho"] > MAX_PDF_APQP:
+                    regs.append({"tipo": "documento não anexado (limite de tamanho)", "arquivo": os.path.basename(d["caminho"])})
+                    continue
+                total += d["tamanho"]
+                anexos.append({"tipo": d["tipo"], "caminho": d["caminho"]})
+                regs.append({"tipo": f"{d['tipo']} anexado", "arquivo": os.path.basename(d["caminho"]),
+                             "revisão (pasta)": os.path.relpath(d["pasta"], os.path.join(pasta_ano, pastas[0]))})
+        r = _resultado(nome, regs)
+        r["anexar"] = anexos
+        return r
+    except Exception as e:
+        return _resultado(nome, erro=str(e))
+
+
+FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc, apqp]
 
 
 def coletar(pn, instance_path):

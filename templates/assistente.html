@@ -36,13 +36,22 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
     {% endfor %}
     </tbody>
   </table>
-  {% if pacote.anexos %}<p>Anexos que vão junto: {% for a in pacote.anexos %}<strong>{{ a.nome }}</strong>{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
   <details><summary>Ver o texto completo que será enviado</summary>
     <pre class="envio">{{ texto }}</pre></details>
-  <form method="post" action="{{ url_for('ia.enviar', rid=rec.id) }}" class="linha">
-    <button type="submit" {{ 'disabled' if not tem_chave }}
-      onclick="this.textContent='Analisando... (pode levar 1-2 minutos)'; this.form.submit(); this.disabled=true; return false;">
-      Enviar à IA e gerar sugestões</button>
+  <form method="post" action="{{ url_for('ia.enviar', rid=rec.id) }}">
+    {% if pacote.anexos %}
+    <p>Anexos (marque os que vão junto):</p>
+    {% for a in pacote.anexos %}
+    <label class="check"><input type="checkbox" name="anexo" value="{{ a.nome }}"
+      {{ 'checked' if not (a.origem or '').startswith('Plano de controle') }}>
+      <strong>{{ a.nome }}</strong> <span class="legenda">{{ a.origem or 'e-mail do cliente' }}</span></label>
+    {% endfor %}
+    <p class="legenda">Cada PDF a mais deixa a análise mais lenta e gasta mais da cota grátis. Os planos de controle
+      vêm desmarcados: marque só os da operação suspeita.</p>
+    {% endif %}
+    <div class="linha"><button type="submit" {{ 'disabled' if not tem_chave }}
+      onclick="this.textContent='Analisando... (pode levar alguns minutos)'; this.form.submit(); this.disabled=true; return false;">
+      Enviar à IA e gerar sugestões</button></div>
   </form>
 </section>
 {% endif %}
