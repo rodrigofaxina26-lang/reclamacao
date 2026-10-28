@@ -52,7 +52,23 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <h3 style="margin-top:0">3. SUGESTÕES do assistente <span class="tag">não confirmadas</span></h3>
   <p class="legenda">Geradas em {{ resultado.gerado_em[:16].replace('T', ' ') }} ({{ resultado.modelo }}). Nada abaixo está no 8D até você clicar em incluir.</p>
   <h4>E-mail do cliente</h4><p>{{ resultado.resumo_email }}</p>
+  {% if resultado.d2 %}
+  <h4>Descrição do problema (D2 · 5W2H)</h4>
+  <table class="tabela">
+    {% for chave, (campo, rotulo) in campos_d2.items() %}{% if resultado.d2[chave] %}
+    <tr><th style="width:200px">{{ rotulo }}</th><td>{{ resultado.d2[chave] }}
+      {% if rec[campo] %}<span class="legenda">(o D2 já tem texto aqui; não será alterado)</span>{% endif %}</td></tr>
+    {% endif %}{% endfor %}
+  </table>
+  <form method="post" action="{{ url_for('ia.aceitar_d2', rid=rec.id) }}" class="linha">
+    <button type="submit">Preencher os campos vazios do D2</button></form>
+  {% endif %}
   <h4>O que o histórico mostra</h4><p>{{ resultado.leitura_historico }}</p>
+  {% if resultado.contencao %}
+  <h4>Contenção sugerida (D3)</h4>
+  <p class="legenda">Referência para o D3: confira o que já foi feito e registre na aba D3.</p>
+  <ul>{% for c in resultado.contencao %}<li>{{ c }}</li>{% endfor %}</ul>
+  {% endif %}
 
   <h4>Causas sugeridas (Ishikawa)</h4>
   {% for c in resultado.causas %}

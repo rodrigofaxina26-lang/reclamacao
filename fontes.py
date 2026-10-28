@@ -164,6 +164,16 @@ def materia_prima(pn, cfg):
     """Certificados e CEP das bobinas (ensaios mecânicos e química) da MP usada na peça."""
     nome = "Matéria-prima (certificados e CEP)"
     try:
+        # o sistema de MP cadastra a peça com outra revisão (ex.: BS10073B para a BS10073A):
+        # se o código exato não existir lá, usa a revisão com o mesmo código base
+        pecas = json.loads(_get(f"{cfg['materia_prima']}/api/info")).get("pecas", [])
+        if pn not in pecas:
+            base = re.sub(r"[A-Z]\d*$", "", pn)
+            parecidas = sorted(p for p in pecas if re.sub(r"[A-Z]\d*$", "", p) == base)
+            if not parecidas:
+                return _resultado(nome)
+            pn = parecidas[0]
+            nome += f" - peça {pn} (revisão cadastrada no sistema de MP)"
         cep = json.loads(_get(f"{cfg['materia_prima']}/api/cep", {"peca": pn, "periodo": "tudo"}))
         regs = [{"tipo": "estatística CEP", **e} for e in cep.get("estatisticas", [])]
         if cep.get("alerta_clc"):
@@ -186,6 +196,26 @@ def _txt(v):
     return v.strftime("%d/%m/%Y") if hasattr(v, "strftime") else " ".join(str(v).split())
 
 
+SEMAFORO = {"+G": "verde (+G)", "-G": "verde (-G)", "+Y": "amarelo (+Y)", "-Y": "amarelo (-Y)",
+            "R": "VERMELHO - não realizado/atrasado (R)", "N/A": "não se aplica"}
+
+
+def _cabecalho_dados(cab):
+    """A aba Dados repete 'PRAZO' e 'Realizado' depois de cada etapa: renomeia para
+    '<etapa> - prazo' / '<etapa> - realizado' e ignora as colunas de contagem após 'Observações'."""
+    novo, etapa = [], ""
+    for c in cab:
+        if novo and novo[-1] == "Observações":
+            novo += [""] * (len(cab) - len(novo))
+            break
+        if c in ("PRAZO", "Realizado"):
+            novo.append(f"{etapa} - {c.lower()}")
+        else:
+            etapa = c if c not in novo else f"{c} (2ª vez)"   # 'CLIENTE INFORMADO' aparece 2x
+            novo.append(etapa)
+    return novo
+
+
 def planilha_nc(pn, cfg):
     nome = "Planilha de NC externas"
     try:
@@ -195,9 +225,10 @@ def planilha_nc(pn, cfg):
         # aba Dados: cabeçalho na linha 5
         ws = wb["Dados"]
         linhas = ws.iter_rows(min_row=5, values_only=True)
-        cab = [_txt(c) for c in next(linhas)]
+        cab = _cabecalho_dados([_txt(c) for c in next(linhas)])
         for l in linhas:
-            d = {cab[i]: _txt(v) for i, v in enumerate(l) if i < len(cab) and cab[i] and _txt(v)}
+            d = {cab[i]: SEMAFORO.get(_txt(v), _txt(v)) for i, v in enumerate(l)
+                 if i < len(cab) and cab[i] and _txt(v)}
             codigos = " ".join(v for k, v in d.items() if "digo" in k).upper()
             if alvo in codigos:
                 regs.append({"aba": "Dados", **d})

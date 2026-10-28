@@ -10,6 +10,7 @@ import email
 import email.policy
 import json
 import os
+import time
 from datetime import datetime
 
 from flask import (Blueprint, current_app, flash, redirect, render_template, request, session,
@@ -42,16 +43,36 @@ Regras:
 - Se uma ação parecida já foi tomada antes para a mesma peça/modo de falha e o problema voltou,
   aponte isso: a ação anterior não foi eficaz.
 - As fontes marcadas com erro não foram lidas; não tire conclusões sobre elas.
-- Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + "."
+- Na planilha de NC, cada etapa vem com semáforo: VERMELHO (R) quer dizer que a etapa não foi
+  realizada ou está atrasada.
+- Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + """.
+- Levante hipóteses em todas as categorias 6M em que os dados dêem algum indício (normalmente
+  4 a 6 causas). A cadeia de porquês deve ir até uma causa sistêmica (4 a 5 porquês por perna).
+- Contenção (seleção 100%, bloqueio de estoque, peças em trânsito, ponto de corte) vai em
+  "contencao" (D3), NUNCA em "acoes". Em "acoes" ficam só ações corretivas/preventivas (D5).
+- "foco" da ação: OCORRENCIA se ela impede o defeito de ser gerado; NAO_DETECCAO se ela faz o
+  defeito ser detectado antes de sair (inspeção, dispositivo, padrão visual, auditoria).
+- Prefira ações robustas (poka-yoke, dispositivo, mudança de processo/ferramenta, controle
+  estatístico, revisão de PFMEA/plano de controle). Treinamento e conscientização sozinhos
+  são ações fracas: use só como complemento.
+- Em "d2", preencha a descrição do problema (5W2H) apenas com o que estiver no e-mail/anexo;
+  deixe "" no que não for informado."""
 
 _txt = {"type": "string"}
+# campos do D2 que o assistente pode sugerir: chave no JSON -> (campo do modelo, rótulo)
+CAMPOS_D2 = {"o_que": ("d2_o_que", "O quê"), "onde": ("d2_onde", "Onde"), "quando": ("d2_quando", "Quando"),
+             "quem": ("d2_quem", "Quem"), "como": ("d2_como", "Como"), "quanto": ("d2_quanto", "Quanto"),
+             "por_que_problema": ("d2_por_que_problema", "Por que é um problema")}
 ESQUEMA = {
     "type": "object",
     "additionalProperties": False,
-    "required": ["resumo_email", "leitura_historico", "causas", "porques_ocorrencia",
+    "required": ["resumo_email", "d2", "leitura_historico", "contencao", "causas", "porques_ocorrencia",
                  "porques_nao_deteccao", "acoes", "dados_faltando"],
     "properties": {
         "resumo_email": _txt,
+        "d2": {"type": "object", "additionalProperties": False, "required": list(CAMPOS_D2),
+               "properties": {k: _txt for k in CAMPOS_D2}},
+        "contencao": {"type": "array", "items": _txt},
         "leitura_historico": _txt,
         "causas": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
@@ -79,7 +100,10 @@ def _exigir_login():
 
 # ---------------- arquivos da análise ----------------
 def _pasta(rid):
-    p = os.path.join(current_app.instance_path, "analises", str(rid))
+    # uma pasta por banco: o id 3 do banco de teste não pode sobrescrever o id 3 da produção
+    banco = os.path.splitext(os.path.basename(current_app.config["SQLALCHEMY_DATABASE_URI"]))[0]
+    raiz = "analises" if banco == "reclamacao" else f"analises_{banco}"
+    p = os.path.join(current_app.instance_path, raiz, str(rid))
     os.makedirs(p, exist_ok=True)
     return p
 
@@ -123,7 +147,8 @@ def _chamar_gemini(cfg, chave, anexos, texto):
     partes = [types.Part.from_bytes(data=dados, mime_type=tipo) for tipo, dados in anexos] + [texto]
     cliente = genai.Client(api_key=chave)  # manter a referência: o SDK fecha a conexão se o objeto sumir
     # modelo principal sobrecarregado (503) ou sem cota (429) -> tenta os modelos reserva, em ordem
-    modelos = [cfg["modelo"]] + [m for m in cfg.get("modelos_reserva", []) if m != cfg["modelo"]]
+    # o principal entra 2x: a sobrecarga do Google costuma passar em segundos
+    modelos = [cfg["modelo"]] * 2 + [m for m in cfg.get("modelos_reserva", []) if m != cfg["modelo"]]
     for n, modelo in enumerate(modelos):
         ultimo = n == len(modelos) - 1
         try:
@@ -141,6 +166,7 @@ def _chamar_gemini(cfg, chave, anexos, texto):
             raise ErroIA(f"Gemini recusou o pedido ({e.code}): {e.message}. Confira a chave e o modelo em instance/fontes.json.")
         except errors.APIError as e:
             if e.code == 503 and not ultimo:
+                time.sleep(3)
                 continue
             raise ErroIA(f"Gemini indisponível no momento ({e.code}). Tente de novo em alguns minutos.")
         except Exception as e:  # rede, proxy, timeout
@@ -237,7 +263,7 @@ def tela(rid):
     return render_template("assistente.html", rec=rec, pacote=pacote, texto=texto, resultado=resultado,
                            tem_chave=bool(_chave_api(cfg)), cfg=cfg, arq_chave=ARQ_CHAVE.get(cfg["provedor"]),
                            ext=", ".join(sorted(EXT_EMAIL)),
-                           tipos_porque=TIPOS_PORQUE, hoje=datetime.now().date())
+                           tipos_porque=TIPOS_PORQUE, campos_d2=CAMPOS_D2, hoje=datetime.now().date())
 
 
 @bp.route("/<int:rid>/assistente/coletar", methods=["POST"])
@@ -302,6 +328,29 @@ def enviar(rid):
     with write_lock:
         registrar(rid, f"Assistente · Dados enviados à IA ({modelo}); sugestões recebidas para revisão")
         db.session.commit()
+    return redirect(url_for("ia.tela", rid=rid) + "#sugestoes")
+
+
+@bp.route("/<int:rid>/assistente/aceitar-d2", methods=["POST"])
+def aceitar_d2(rid):
+    """Copia a descrição 5W2H sugerida só para os campos do D2 que ainda estão vazios."""
+    rec, bloqueio = _rec_editavel(rid, "D2")
+    if bloqueio:
+        return bloqueio
+    resultado = _ler(rid, "resultado.json")
+    if not resultado or not resultado.get("d2"):
+        flash("Sugestão não encontrada.", "erro")
+        return redirect(url_for("ia.tela", rid=rid))
+    preenchidos = 0
+    with write_lock:
+        for chave, (campo, rotulo) in CAMPOS_D2.items():
+            valor = (resultado["d2"].get(chave) or "").strip()
+            if valor and not (getattr(rec, campo) or "").strip():
+                setattr(rec, campo, valor)
+                registrar(rid, f"D2 · {rotulo} preenchido a partir de sugestão do assistente: {valor}")
+                preenchidos += 1
+        db.session.commit()
+    flash(f"{preenchidos} campo(s) do D2 preenchido(s). Campos que já tinham texto não foram alterados.", "ok")
     return redirect(url_for("ia.tela", rid=rid) + "#sugestoes")
 
 
