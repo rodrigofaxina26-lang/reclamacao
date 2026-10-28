@@ -42,6 +42,8 @@ Regras:
   hipótese não tiver dado que a apoie, diga que é hipótese a verificar.
 - Nunca invente números, datas, lotes ou registros que não estejam nos dados.
 - Considere sempre as duas pernas: por que OCORREU e por que NÃO FOI DETECTADO.
+- Os "8Ds anteriores neste sistema" são a fonte mais confiável: causas já confirmadas e ações
+  já testadas. Se um 8D anterior foi NÃO eficaz, não repita a mesma ação sem mudar a abordagem.
 - Se uma ação parecida já foi tomada antes para a mesma peça/modo de falha e o problema voltou,
   aponte isso: a ação anterior não foi eficaz.
 - As fontes marcadas com erro não foram lidas; não tire conclusões sobre elas.
@@ -268,6 +270,30 @@ def _dados_reclamacao(rec):
     return "\n".join(f"{k}: {v}" for k, v in campos if v not in (None, ""))
 
 
+def _historico_8d(rec):
+    """8Ds deste sistema da mesma família de peça (código base) ou do mesmo modo de falha:
+    causa confirmada, ações e se foram eficazes. É a "memória" da empresa para o assistente."""
+    base = re.sub(r"[A-Z]\d*$", "", rec.part_number or "")
+    outras = (Reclamacao.query.filter(Reclamacao.id != rec.id)
+              .filter(db.or_(Reclamacao.part_number.like(base + "%"), Reclamacao.modo_falha == rec.modo_falha))
+              .order_by(Reclamacao.data_recebimento.desc()).limit(15).all())
+    regs = []
+    for r in outras:
+        if re.sub(r"[A-Z]\d*$", "", r.part_number or "") != base and r.modo_falha != rec.modo_falha:
+            continue  # o LIKE pega FV1019 dentro de FV10191...: confere o código base exato
+        d = {"8D": r.codigo, "data": r.data_recebimento.strftime("%d/%m/%Y") if r.data_recebimento else "",
+             "cliente": r.cliente.nome, "peça": r.part_number, "modo de falha": r.modo_falha, "status": r.status,
+             "causas prováveis": "; ".join(f"[{c.categoria}] {c.descricao}" for c in r.causas if c.situacao == "PROVAVEL"),
+             "causas descartadas": "; ".join(f"[{c.categoria}] {c.descricao}" for c in r.causas if c.situacao == "DESCARTADA"),
+             "causa raiz ocorrência": r.d4_causa_ocorrencia, "causa raiz não detecção": r.d4_causa_nao_deteccao,
+             "ações": "; ".join(f"[{a.tipo}/{a.foco}/{a.status}] {a.descricao}" for a in r.acoes),
+             "eficaz (D8)": {True: "sim", False: "NÃO"}.get(r.d8_eficaz, "não avaliado"),
+             "link": url_for("rec.detalhe", rid=r.id, aba="D4", _external=True)}
+        regs.append({k: v for k, v in d.items() if v})
+    return {"fonte": "8Ds anteriores neste sistema (mesma família de peça ou mesmo modo de falha)",
+            "ok": True, "erro": None, "total": len(regs), "registros": regs}
+
+
 def _montar_texto(rec, pacote):
     partes = ["## Reclamação cadastrada", _dados_reclamacao(rec)]
     if pacote.get("email_texto"):
@@ -324,7 +350,7 @@ def coletar(rid):
     colado = request.form.get("email_colado", "").strip()
     if colado:
         pacote["email_texto"] = (pacote["email_texto"] + "\n\n" + colado).strip()
-    pacote["fontes"] = fontes.coletar(rec.part_number, current_app.instance_path)
+    pacote["fontes"] = [_historico_8d(rec)] + fontes.coletar(rec.part_number, current_app.instance_path)
     # documentos de outras fontes (PFMEA/plano de controle do APQP) vão junto como anexo:
     # copia para a pasta da análise para o envio usar exatamente o que foi conferido
     for f in pacote["fontes"]:
