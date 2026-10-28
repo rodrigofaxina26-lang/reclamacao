@@ -4,11 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Reclamações 8D{% endblock %} · Pro-Metal</title>
+<link rel="icon" href="{{ url_for('static', filename='logo.png') }}">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
 <header class="topo">
-  <a class="marca" href="{{ url_for('rec.lista') }}">Pro-Metal · Reclamações 8D</a>
+  <a class="marca" href="{{ url_for('rec.lista') }}"><img src="{{ url_for('static', filename='logo.png') }}" alt="Pro-Metal"> Reclamações 8D</a>
   {% if session.usuario %}
   <nav>
     <a href="{{ url_for('rec.lista') }}">Reclamações</a>

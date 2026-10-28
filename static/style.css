@@ -2,7 +2,8 @@
 body { margin: 0; font-family: "Segoe UI", Arial, sans-serif; font-size: 14px; color: #222; background: #f3f4f6; }
 .topo { display: flex; justify-content: space-between; align-items: center; background: #1f3a5f; color: #fff; padding: 10px 20px; }
 .topo a { color: #fff; text-decoration: none; margin-left: 16px; }
-.topo .marca { margin-left: 0; font-weight: 600; }
+.topo .marca { margin-left: 0; font-weight: 600; display: flex; align-items: center; gap: 12px; }
+.topo .marca img { height: 34px; background: #fff; border-radius: 4px; padding: 3px 8px; }
 .usuario { margin-left: 16px; opacity: .8; }
 main { max-width: 1300px; margin: 0 auto; padding: 16px 20px; }
 h1 { font-size: 20px; }
