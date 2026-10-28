@@ -54,6 +54,9 @@ Regras:
   defeito e onde o PFMEA/plano de controle precisa ser revisado. Cite a operação (OP) quando der.
   Esses documentos COMPLEMENTAM o histórico: continue usando os dados de matéria-prima, cartões,
   refugo e reclamações anteriores como base principal das causas.
+- O faturamento traz as NFs da peça (data, NF, quantidade). Use para sugerir o ponto de corte
+  (NF), estimar peças em trânsito/no cliente na contenção e calcular PPM (peças reclamadas ÷
+  peças faturadas no período), sempre mostrando a conta.
 - Na planilha de NC, cada etapa vem com semáforo: VERMELHO (R) quer dizer que a etapa não foi
   realizada ou está atrasada.
 - Categorias 6M aceitas: """ + ", ".join(CATEGORIAS_6M) + """.

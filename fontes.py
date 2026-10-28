@@ -18,6 +18,8 @@ PADRAO = {
     "falhas": "http://192.168.1.150:5000",
     "materia_prima": "http://192.168.1.150:8765",
     "apqp": r"R:\APQP",
+    "faturamento": r"P:\QUALIDADE\USUARIOS\00. Dept. Qualidade\07. Controle de Refugo\2026"
+                   r"\Faturamento - GERAL.xlsm",
     "planilha_nc": r"P:\QUALIDADE\03. NÃO CONFORMIDADES\01. EXTERNAS"
                    r"\00. Gerenciamento de Reclamações 2026 - Externas - Rev 1.xlsx",
     "meses_historico": 12,
@@ -273,7 +275,40 @@ def planilha_nc(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
-MAX_PDF_APQP = 6 * 1024 * 1024   # soma dos PDFs do APQP anexados (limite de envio à IA)
+def faturamento(pn, cfg):
+    """NFs da peça (aba REALIZADO PROTHEUS): data, NF e quantidade - sem preço/valor.
+    Serve para ponto de corte (NF), quantidade em trânsito/no cliente (D3) e PPM."""
+    nome = "Faturamento (NFs emitidas)"
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(cfg["faturamento"], read_only=True, data_only=True)
+        linhas = wb["REALIZADO PROTHEUS"].iter_rows(min_row=2, values_only=True)
+        cab = [str(c or "").strip() for c in next(linhas)]
+        i_cod, i_qtd, i_nf, i_data = (cab.index(c) for c in ("D2_COD", "D2_QUANT", "D2_DOC", "D2_EMISSAO"))
+        inicio, alvo = _inicio(cfg), pn.upper()
+        nfs, por_mes = {}, {}
+        for l in linhas:
+            if str(l[i_cod] or "").strip().upper() != alvo or not hasattr(l[i_data], "date"):
+                continue
+            dia = l[i_data].date()
+            if dia < inicio:
+                continue
+            chave = (dia, str(l[i_nf]).strip())
+            nfs[chave] = nfs.get(chave, 0) + (l[i_qtd] or 0)
+            mes = dia.strftime("%m/%Y")
+            por_mes[mes] = por_mes.get(mes, 0) + (l[i_qtd] or 0)
+        wb.close()
+        regs = [{"tipo": "total faturado no período", "desde": inicio.strftime("%d/%m/%Y"),
+                 "peças": sum(nfs.values()), "notas fiscais": len(nfs)}] if nfs else []
+        regs += [{"tipo": "faturado no mês", "mês": m, "peças": q} for m, q in por_mes.items()]
+        regs += [{"tipo": "NF", "data": d.strftime("%d/%m/%Y"), "nf": nf, "peças": q}
+                 for (d, nf), q in sorted(nfs.items(), reverse=True)[:25]]
+        return _resultado(nome, regs)
+    except Exception as e:
+        return _resultado(nome, erro=str(e))
+
+
+MAX_PDF_APQP =6 * 1024 * 1024   # soma dos PDFs do APQP anexados (limite de envio à IA)
 
 
 def _projetos_apqp(pn, cfg):
@@ -352,7 +387,7 @@ def apqp(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
-FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc, apqp]
+FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc, faturamento, apqp]
 
 
 def coletar(pn, instance_path):
