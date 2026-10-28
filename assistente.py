@@ -10,12 +10,13 @@ import email
 import email.policy
 import json
 import os
+import re
 import shutil
 import time
 from datetime import datetime
 
-from flask import (Blueprint, current_app, flash, redirect, render_template, request, session,
-                   url_for)
+from flask import (Blueprint, current_app, flash, redirect, render_template, request, send_from_directory,
+                   session, url_for)
 from werkzeug.utils import secure_filename
 
 import fontes
@@ -63,6 +64,12 @@ Regras:
 - Prefira ações robustas (poka-yoke, dispositivo, mudança de processo/ferramenta, controle
   estatístico, revisão de PFMEA/plano de controle). Treinamento e conscientização sozinhos
   são ações fracas: use só como complemento.
+- Em "evidencias", monte a linha do tempo dos registros dos outros sistemas ligados ao modo de
+  falha da reclamação (cartões, refugo, alertas, bobinas/certificados, reclamações anteriores):
+  data (dd/mm/aaaa), fonte, o que mostra e o "link" do registro COPIADO EXATAMENTE como veio
+  (ou "" se o registro não tiver link). Inclua as datas também no texto de "base" das causas.
+- Só fale de um documento (PFMEA, plano de controle, certificado) se ele estiver nos dados ou
+  anexado. Não afirme o que um documento contém sem tê-lo recebido.
 - Em "d2", preencha a descrição do problema (5W2H) apenas com o que estiver no e-mail/anexo;
   deixe "" no que não for informado."""
 
@@ -75,7 +82,7 @@ ESQUEMA = {
     "type": "object",
     "additionalProperties": False,
     "required": ["resumo_email", "d2", "leitura_historico", "contencao", "causas", "porques_ocorrencia",
-                 "porques_nao_deteccao", "acoes", "dados_faltando"],
+                 "porques_nao_deteccao", "acoes", "evidencias", "dados_faltando"],
     "properties": {
         "resumo_email": _txt,
         "d2": {"type": "object", "additionalProperties": False, "required": list(CAMPOS_D2),
@@ -95,6 +102,10 @@ ESQUEMA = {
             "properties": {"tipo": {"type": "string", "enum": TIPOS_ACAO},
                            "foco": {"type": "string", "enum": list(TIPOS_PORQUE)},
                            "descricao": _txt, "base": _txt}}},
+        "evidencias": {"type": "array", "items": {
+            "type": "object", "additionalProperties": False,
+            "required": ["data", "fonte", "descricao", "link"],
+            "properties": {"data": _txt, "fonte": _txt, "descricao": _txt, "link": _txt}}},
         "dados_faltando": {"type": "array", "items": _txt},
     },
 }
@@ -142,6 +153,18 @@ def _chave_api(cfg):
         with open(caminho, encoding="utf-8") as f:
             return f.read().strip() or None
     return None
+
+
+def _data_ordem(txt):
+    """'16/09/2026' -> (2026, 9, 16) para ordenar a linha do tempo; sem data vai para o fim."""
+    m = re.search(r"(\d{2})/(\d{2})/(\d{4})", txt or "")
+    return (int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else (9999, 0, 0)
+
+
+@bp.route("/<int:rid>/assistente/arquivo/<nome>")
+def arquivo(rid, nome):
+    """Abre um anexo da análise (e-mail, PFMEA, plano de controle copiados na coleta)."""
+    return send_from_directory(_pasta(rid), secure_filename(nome))
 
 
 class ErroIA(Exception):
@@ -341,6 +364,12 @@ def enviar(rid):
     except ValueError:
         flash("A IA devolveu uma resposta fora do formato esperado. Tente de novo.", "erro")
         return redirect(url_for("ia.tela", rid=rid))
+    # link só vale se veio de um registro coletado: a IA não pode inventar endereço
+    links = {r.get("link") for f in pacote["fontes"] for r in f["registros"]}
+    for e in resultado.get("evidencias", []):
+        if e.get("link") not in links:
+            e["link"] = ""
+    resultado.get("evidencias", []).sort(key=lambda e: _data_ordem(e.get("data", "")))
     resultado.update(gerado_em=datetime.now(), por=session.get("usuario"), modelo=modelo,
                      aceitas={"causas": [], "acoes": []}, tokens=tokens)
     _gravar(rid, "resultado.json", resultado)

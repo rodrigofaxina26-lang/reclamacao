@@ -98,6 +98,11 @@ def _resultado(fonte, registros=None, erro=None):
             "total": len(registros), "registros": registros[:MAX_REGISTROS]}
 
 
+def _br(iso):
+    """2026-03-09 -> 09/03/2026"""
+    return "/".join(reversed(iso.split("-"))) if iso and iso[4:5] == "-" else iso
+
+
 def _inicio(cfg):
     return date.today() - timedelta(days=30 * int(cfg["meses_historico"]))
 
@@ -117,7 +122,8 @@ def cartao_amarelo(pn, cfg):
                 if l.get("Lote") in vistos:
                     continue
                 vistos.add(l.get("Lote"))
-                regs.append({k: v for k, v in l.items() if k not in ("Foto", "Ações") and v not in ("", "-")})
+                regs.append({**{k: v for k, v in l.items() if k not in ("Foto", "Ações") and v not in ("", "-")},
+                             "link": f"{cfg['cartao_amarelo']}/{pagina}?" + urllib.parse.urlencode({"codigo_produto": pn})})
         return _resultado(nome, regs)
     except Exception as e:  # rede, timeout, HTML inesperado
         return _resultado(nome, erro=str(e))
@@ -130,6 +136,18 @@ def refugo(pn, cfg):
         modos = json.loads(_get(f"{cfg['refugo']}/modo_falha", params)).get("modos", [])
         turnos = json.loads(_get(f"{cfg['refugo']}/produto_turno", params)).get("turnos", [])
         regs = [{"tipo": "modo de falha", **m} for m in modos] + [{"tipo": "turno", **t} for t in turnos]
+        # datas, prensa e turno de cada um dos principais modos de falha (o Refugo não tem link
+        # direto por peça: o link abre o dashboard, onde se filtra pela peça e pelo modo)
+        for m in modos[:6]:
+            d = json.loads(_get(f"{cfg['refugo']}/modo_falha", {**params, "modo": m["modo"]})).get("detalhe") or {}
+            dia = d.get("diario") or {}
+            datas = [f"{_br(x)} ({q} pç)" for x, q in zip(dia.get("dias", []), dia.get("qtde", []))]
+            regs.append({"tipo": "datas do modo de falha", "modo": m["modo"], "qtde total": d.get("qtde"),
+                         "lançamentos": d.get("lancamentos"),
+                         "máquinas": ", ".join(f"{x['maquina']} ({x['qtde']} pç)" for x in d.get("maquinas", [])),
+                         "turnos": ", ".join(f"{x['turno']} ({x['qtde']} pç)" for x in d.get("turnos", []) if x["qtde"]),
+                         "primeira data": datas[0] if datas else "", "última data": datas[-1] if datas else "",
+                         "datas": "; ".join(datas[-15:]), "link": f"{cfg['refugo']}/"})
         return _resultado(nome, regs)
     except Exception as e:
         return _resultado(nome, erro=str(e))
@@ -147,9 +165,12 @@ def falhas(pn, cfg):
         regs = []
         for c in cartoes:
             campo = lambda cls: _sem_tags(re.search(rf'class="{cls}"[^>]*>(.*?)</(div|span)>', c, re.S))
+            pdf = re.search(r"abrirAlerta\('([^']+)'", c)
             regs.append({"alerta": campo("titulo"), "peça": campo("peca-info"), "modo": campo("modo"),
                          "tipo": "Externo" if "tipo-Externos" in c[:60] else "Interno",
-                         "data": _sem_tags(re.search(r'<div class="meta">.*?</span>\s*<span>(.*?)</span>', c, re.S))})
+                         "data": _sem_tags(re.search(r'<div class="meta">.*?</span>\s*<span>(.*?)</span>', c, re.S)),
+                         "link": cfg["falhas"] + urllib.parse.quote(pdf.group(1)) if pdf else
+                                 f"{cfg['falhas']}/alertas?" + urllib.parse.urlencode({"busca": pn})})
         return _resultado(nome, regs)
     except Exception as e:
         return _resultado(nome, erro=str(e))
@@ -183,12 +204,15 @@ def materia_prima(pn, cfg):
                 regs.append({"tipo": "alerta de estampagem (CLC0)", "componente": peca, "detalhe": cep["alerta_clc"]})
             bobinas = sorted(cep.get("bobinas", []), key=lambda b: b.get("id", 0), reverse=True)
             regs += [{"tipo": "bobina", "componente": peca,
-                      **{k: b[k] for k in CAMPOS_BOBINA if b.get(k) not in (None, "")}}
+                      **{k: b[k] for k in CAMPOS_BOBINA if b.get(k) not in (None, "")},
+                      "link": f"{cfg['materia_prima']}/cep?" + urllib.parse.urlencode(
+                          {"codigo_mp": b.get("codigo_mp") or "", "destaque": b.get("id")})}
                      for b in bobinas[:20 // len(alvos[:4])]]
             certs = json.loads(_get(f"{cfg['materia_prima']}/api/busca", {"peca": peca}))
             regs += [{"tipo": "certificado", "componente": peca,
                       **{k: c[k] for k in ("codigo_mp", "fornecedor", "material", "lote",
-                                          "num_certificado", "nf", "data") if c.get(k)}}
+                                          "num_certificado", "nf", "data") if c.get(k)},
+                      "link": f"{cfg['materia_prima']}/pdf?id={c['id']}"}
                      for c in certs[:5]]
         return _resultado(nome, regs)
     except Exception as e:

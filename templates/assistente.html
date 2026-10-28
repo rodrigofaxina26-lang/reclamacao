@@ -44,7 +44,7 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
     {% for a in pacote.anexos %}
     <label class="check"><input type="checkbox" name="anexo" value="{{ a.nome }}"
       {{ 'checked' if not (a.origem or '').startswith('Plano de controle') }}>
-      <strong>{{ a.nome }}</strong> <span class="legenda">{{ a.origem or 'e-mail do cliente' }}</span></label>
+      <a href="{{ url_for('ia.arquivo', rid=rec.id, nome=a.nome) }}" target="_blank"><strong>{{ a.nome }}</strong></a> <span class="legenda">{{ a.origem or 'e-mail do cliente' }}</span></label>
     {% endfor %}
     <p class="legenda">Cada PDF a mais deixa a análise mais lenta e gasta mais da cota grátis. Os planos de controle
       vêm desmarcados: marque só os da operação suspeita.</p>
@@ -77,6 +77,18 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <h4>Contenção sugerida (D3)</h4>
   <p class="legenda">Referência para o D3: confira o que já foi feito e registre na aba D3.</p>
   <ul>{% for c in resultado.contencao %}<li>{{ c }}</li>{% endfor %}</ul>
+  {% endif %}
+
+  {% if resultado.evidencias %}
+  <h4>Evidências nos outros sistemas (linha do tempo)</h4>
+  <table class="tabela">
+    <thead><tr><th>Data</th><th>Fonte</th><th>O que mostra</th><th></th></tr></thead>
+    <tbody>{% for e in resultado.evidencias %}
+    <tr><td class="nowrap">{{ e.data }}</td><td>{{ e.fonte }}</td><td>{{ e.descricao }}</td>
+      <td class="nowrap">{% if e.link %}<a href="{{ e.link }}" target="_blank">abrir ↗</a>{% endif %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  <p class="legenda">O link do Refugo abre o dashboard: filtre lá pela peça e pelo modo de falha (o sistema não aceita link direto).</p>
   {% endif %}
 
   <h4>Causas sugeridas (Ishikawa)</h4>
