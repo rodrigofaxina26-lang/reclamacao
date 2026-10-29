@@ -22,6 +22,7 @@ PADRAO = {
                    r"\Faturamento - GERAL.xlsm",
     "planilha_nc": r"P:\QUALIDADE\03. NÃO CONFORMIDADES\01. EXTERNAS"
                    r"\00. Gerenciamento de Reclamações 2026 - Externas - Rev 1.xlsx",
+    "auditoria_lpc": r"C:\SistemaLPC\lpc_14basics_integrado.db",
     "meses_historico": 12,
     # IA usada pelo assistente: "gemini" (chave em instance/gemini_key.txt)
     # ou "claude" (chave em instance/anthropic_key.txt)
@@ -311,6 +312,51 @@ def faturamento(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
+def auditoria_lpc(pn, cfg):
+    """Auditorias LPC / 14 Q-Basics (banco SQLite do SistemaLPC, aberto só para leitura):
+    auditorias da peça no período e os Q-Basics não conformes com o plano de ação."""
+    nome = "Auditorias LPC (14 Q-Basics)"
+    try:
+        import sqlite3
+        uri = "file:" + urllib.parse.quote(cfg["auditoria_lpc"].replace("\\", "/")) + "?mode=ro"
+        con = sqlite3.connect(uri, uri=True, timeout=TIMEOUT)
+        con.text_factory = lambda b: b.decode("utf-8", errors="replace")
+        # o campo peça é digitado à mão ("hw10061b", "FV 10196 A"): compara sem espaços/maiúsculas,
+        # pelo código exato ou pelo mesmo código base (componentes B, C1...)
+        alvo = pn.upper().replace(" ", "")
+        base = re.sub(r"[A-Z]\d*$", "", alvo)
+        auds = [a for a in con.execute(
+                    "select id, data_auditoria, auditor_nome, camada, linha, posto, status_geral, peca"
+                    " from auditorias_lpc where data_auditoria >= ? order by data_auditoria desc",
+                    (_inicio(cfg).isoformat(),))
+                if (p := (a[7] or "").upper().replace(" ", "")) and
+                   (p == alvo or re.sub(r"[A-Z]\d*$", "", p) == base)]
+        regs = []
+        for aid, data, auditor, camada, linha, posto, status, peca in auds:
+            itens = con.execute(
+                "select qbasic_num, qbasic_nome, status, observacao, plano_acao, status_acao, prazo_acao,"
+                " data_conclusao from auditoria_itens where auditoria_id = ? order by qbasic_num", (aid,)).fetchall()
+            nc = [i for i in itens if i[2] and i[2] not in ("Conforme", "N/A")]
+            regs.append({"tipo": "auditoria", "data": _br(data), "peça": peca, "auditor": auditor,
+                         "camada": camada, "linha": linha, "posto": posto, "resultado": status,
+                         "Q-Basics verificados": len(itens), "não conformes": len(nc)})
+            regs += [{"tipo": "Q-Basic não conforme", "data da auditoria": _br(data), "peça": peca,
+                      "Q-Basic": f"{n} - {q}", "status": s,
+                      **{k: _txt(v) for k, v in (("observação", obs), ("plano de ação", plano),
+                                                  ("status da ação", sa), ("prazo", _br(pz or "")),
+                                                  ("concluída em", _br(dc or ""))) if _txt(v)}}
+                     for n, q, s, obs, plano, sa, pz, dc in nc]
+        criticos = [c for c in con.execute("select codigo, descricao, motivo from itens_criticos where ativo = 1")
+                    if (c[0] or "").upper().replace(" ", "") in (alvo, base) or
+                       re.sub(r"[A-Z]\d*$", "", (c[0] or "").upper().replace(" ", "")) == base]
+        regs += [{"tipo": "item crítico cadastrado no LPC", "código": c[0], "descrição": _txt(c[1]),
+                  "motivo": _txt(c[2])} for c in criticos]
+        con.close()
+        return _resultado(nome, regs)
+    except Exception as e:
+        return _resultado(nome, erro=str(e))
+
+
 MAX_PDF_APQP =6 * 1024 * 1024   # soma dos PDFs do APQP anexados (limite de envio à IA)
 
 
@@ -390,7 +436,7 @@ def apqp(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
-FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc, faturamento, apqp]
+FONTES = [cartao_amarelo, refugo, falhas, materia_prima, planilha_nc, faturamento, auditoria_lpc, apqp]
 
 
 def coletar(pn, instance_path):
