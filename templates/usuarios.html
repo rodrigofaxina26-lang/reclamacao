@@ -2,15 +2,12 @@
 {% block titulo %}Usuários{% endblock %}
 {% block conteudo %}
 <h1>Usuários</h1>
-{% set pendentes = usuarios|rejectattr('ativo')|list %}
-{% if pendentes %}<p class="msg msg-alerta">{{ pendentes|length }} conta(s) aguardando liberação:
-  {{ pendentes|map(attribute='nome')|join(', ') }}. Clique em "ativar" para liberar.</p>{% endif %}
 <table class="tabela">
   <thead><tr><th>Login</th><th>Nome</th><th>Situação</th><th>Redefinir senha</th><th></th></tr></thead>
   <tbody>
   {% for u in usuarios %}
   <tr>
-    <td>{{ u.login }}</td><td>{{ u.nome }}</td><td>{{ 'Ativo' if u.ativo else 'Desativado / aguardando liberação' }}</td>
+    <td>{{ u.login }}</td><td>{{ u.nome }}</td><td>{{ 'Ativo' if u.ativo else 'Desativado' }}</td>
     <td>
       <form method="post" action="{{ url_for('rec.usuario_senha', uid=u.id) }}" class="linha" style="margin:0">
         <input name="senha" type="password" placeholder="Nova senha" required minlength="6">
