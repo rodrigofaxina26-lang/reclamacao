@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block titulo %}Backup{% endblock %}
+{% block conteudo %}
+<h1>Backup</h1>
+<p>Todo dia o servidor gera um .zip com o banco, os anexos e as análises do assistente, e guarda os
+  últimos {{ dias }}. Pasta: <code>{{ pasta }}</code></p>
+{% if 'instance' in pasta %}
+<p class="msg msg-alerta">Os backups estão no mesmo disco do sistema: se o disco falhar, perde tudo junto.
+  Para mandar para a rede, crie o arquivo <code>instanceackup.json</code> com
+  <code>{"pasta": "P:\caminho\da\pasta"}</code> e reinicie o sistema.</p>
+{% endif %}
+<form method="post"><button type="submit">Fazer backup agora</button></form>
+<table class="tabela" style="margin-top:12px">
+  <thead><tr><th>Arquivo</th><th>Data</th><th>Tamanho</th></tr></thead>
+  <tbody>{% for nome, quando, mb in itens %}
+  <tr><td>{{ nome }}</td><td>{{ quando|dt }}</td><td>{{ mb }} MB</td></tr>
+  {% else %}<tr><td colspan="3" class="vazio">Nenhum backup ainda.</td></tr>{% endfor %}</tbody>
+</table>
+<p class="legenda">Para restaurar: pare o sistema, extraia o .zip escolhido dentro da pasta <code>instance</code>
+  (substituindo os arquivos) e inicie de novo.</p>
+{% endblock %}

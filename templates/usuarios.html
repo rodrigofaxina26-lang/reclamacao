@@ -3,11 +3,13 @@
 {% block conteudo %}
 <h1>Usuários</h1>
 <table class="tabela">
-  <thead><tr><th>Login</th><th>Nome</th><th>Situação</th><th>Redefinir senha</th><th></th></tr></thead>
+  <thead><tr><th>Login</th><th>Nome</th><th>Situação</th><th>Perfil</th><th>Redefinir senha</th><th></th></tr></thead>
   <tbody>
   {% for u in usuarios %}
   <tr>
     <td>{{ u.login }}</td><td>{{ u.nome }}</td><td>{{ 'Ativo' if u.ativo else 'Desativado' }}</td>
+    <td>{{ 'Administrador' if u.admin else 'Analista' }}{% if u.login != session.usuario %}
+      <form method="post" action="{{ url_for('rec.usuario_admin', uid=u.id) }}" class="inline"><button class="link">{{ 'tornar analista' if u.admin else 'tornar administrador' }}</button></form>{% endif %}</td>
     <td>
       <form method="post" action="{{ url_for('rec.usuario_senha', uid=u.id) }}" class="linha" style="margin:0">
         <input name="senha" type="password" placeholder="Nova senha" required minlength="6">

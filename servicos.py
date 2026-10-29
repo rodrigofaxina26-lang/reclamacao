@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import session
 from sqlalchemy import func
 
-from models import db, Reclamacao, Historico
+from models import db, Reclamacao, Historico, Usuario
 
 write_lock = threading.Lock()
 
@@ -81,6 +81,12 @@ def normalizar_pn(pn):
 def normalizar_modo(modo):
     # recorrência compara texto exato: tira espaços duplicados e caixa
     return " ".join((modo or "").split()).upper() or None
+
+
+def eh_admin():
+    """Consulta o banco a cada vez: tirar o perfil de alguém vale na hora, sem novo login."""
+    login = session.get("usuario")
+    return bool(login and Usuario.query.filter_by(login=login, ativo=True, admin=True).first())
 
 
 def gerar_codigo():

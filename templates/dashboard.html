@@ -13,7 +13,24 @@
     </select></label>
   <button type="submit">Filtrar</button>
 </form>
-<p>Total de reclamações: <strong>{{ total }}</strong></p>
+<div class="kpis">
+  <div class="kpi"><span>{{ total }}</span>reclamações</div>
+  <div class="kpi"><span>{{ ind.abertas }}</span>em aberto</div>
+  <div class="kpi"><span>{{ ind.media_fechar if ind.media_fechar is not none else '-' }}</span>dias em média para fechar</div>
+  <div class="kpi"><span>{{ ind.reincidentes }}</span>reincidentes (mesmo PN e modo)</div>
+  <div class="kpi"><span>{{ ind.acoes_vencidas }}</span>ações vencidas de {{ ind.acoes }}</div>
+  <div class="kpi"><span>{{ ind.acoes_no_prazo ~ '%' if ind.acoes_no_prazo is not none else '-' }}</span>ações concluídas no prazo</div>
+</div>
+
+<section class="caixa" style="margin:16px 0">
+  <h3 style="margin-top:0">Reclamações por mês</h3>
+  <div class="colunas">
+  {% for rotulo, n in por_mes %}
+    <div class="coluna" title="{{ rotulo }}: {{ n }}"><small>{{ n or '' }}</small>
+      <div class="barra-v" style="height:{{ (100 * n / maior_mes)|round }}%"></div><span>{{ rotulo }}</span></div>
+  {% endfor %}
+  </div>
+</section>
 
 <div class="painel">
   <section class="caixa">
@@ -43,6 +60,17 @@
     </table>
   </section>
 </div>
+
+<section class="caixa" style="margin-top:16px">
+  <h3 style="margin-top:0">Peças com mais reclamações</h3>
+  <table class="tabela">
+    <thead><tr><th>Part number</th><th>Qtd.</th><th style="width:60%"></th></tr></thead>
+    <tbody>{% for pn, n in pecas %}
+    <tr><td><a href="{{ url_for('rec.lista', pn=pn) }}">{{ pn }}</a></td><td>{{ n }}</td>
+      <td><div class="barra" style="width:{{ (100 * n / pecas[0][1])|round }}%"></div></td></tr>
+    {% else %}<tr><td colspan="3" class="vazio">Sem dados.</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
 
 <section class="caixa" style="margin-top:16px">
   <h3 style="margin-top:0">Pareto de modo de falha</h3>

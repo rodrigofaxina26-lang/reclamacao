@@ -2,6 +2,33 @@
 {% from "_semaforo.html" import sem %}
 {% block conteudo %}
 <h1>Reclamações</h1>
+{% set n_pend = pendencias.etapas|length + pendencias.acoes|length %}
+{% if n_pend %}
+<details class="caixa pendencias" {{ 'open' if pendencias.etapas|selectattr('sem', 'equalto', 'vermelho')|list or pendencias.acoes|selectattr('dias', 'lt', 0)|list }}>
+  <summary><strong>⚠ Prazos: {{ pendencias.etapas|length }} etapa(s) e {{ pendencias.acoes|length }} ação(ões) vencidas ou vencendo</strong></summary>
+  <div class="painel">
+  <div>
+    <h4>Etapas do 8D (prazo do cliente)</h4>
+    <table class="tabela"><thead><tr><th>Reclamação</th><th>Etapa</th><th>Prazo</th><th></th></tr></thead><tbody>
+    {% for e in pendencias.etapas %}<tr>
+      <td><a href="{{ url_for('rec.detalhe', rid=e.rec.id, aba=e.etapa) }}">{{ e.rec.codigo }}</a> · {{ e.rec.cliente.nome }}</td>
+      <td>{{ e.nome }}</td><td class="nowrap">{{ e.prazo|dt }}</td>
+      <td><span class="sem sem-{{ e.sem }}">{{ 'vencida' if e.sem == 'vermelho' else 'vencendo' }}</span></td></tr>
+    {% else %}<tr><td colspan="4" class="vazio">Nada.</td></tr>{% endfor %}</tbody></table>
+  </div>
+  <div>
+    <h4>Ações (D5/D6) com prazo em até 7 dias</h4>
+    <table class="tabela"><thead><tr><th>Reclamação</th><th>Ação</th><th>Responsável</th><th>Prazo</th></tr></thead><tbody>
+    {% for x in pendencias.acoes %}<tr class="{{ 'minha' if x.minha }}">
+      <td><a href="{{ url_for('rec.detalhe', rid=x.rec.id, aba='D6') }}">{{ x.rec.codigo }}</a></td>
+      <td>{{ x.acao.descricao|truncate(70) }}</td><td>{{ x.acao.responsavel }}{{ ' (você)' if x.minha }}</td>
+      <td class="nowrap {{ 'atrasado' if x.dias < 0 }}">{{ x.acao.prazo.strftime('%d/%m/%Y') }}
+        <span class="legenda">{{ 'vencida há %d dia(s)'|format(-x.dias) if x.dias < 0 else 'hoje' if x.dias == 0 else 'em %d dia(s)'|format(x.dias) }}</span></td></tr>
+    {% else %}<tr><td colspan="4" class="vazio">Nada.</td></tr>{% endfor %}</tbody></table>
+  </div>
+  </div>
+</details>
+{% endif %}
 <form class="filtros" method="get">
   <label>Cliente
     <select name="cliente"><option value="">Todos</option>

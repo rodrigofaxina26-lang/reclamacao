@@ -239,8 +239,37 @@ def dashboard():
                       "pct": round(100 * no_prazo / len(concl)) if concl else None,
                       "vencidas_abertas": sem["vermelho"]})
 
+    # indicadores gerais
+    fechadas = [r for r in recs if r.fechada_em]
+    dias_fechar = [(r.fechada_em - r.data_recebimento).days for r in fechadas]
+    hoje = datetime.now().date()
+    acoes = [a for r in recs for a in r.acoes]
+    concl = [a for a in acoes if a.status == "CONCLUIDA" and a.concluida_em]
+    indicadores = {
+        "abertas": len(recs) - len(fechadas), "fechadas": len(fechadas),
+        "media_fechar": round(sum(dias_fechar) / len(dias_fechar)) if dias_fechar else None,
+        "reincidentes": sum(1 for r in recs if r.recorrencias()),
+        "acoes": len(acoes), "acoes_vencidas": sum(1 for a in acoes if a.status != "CONCLUIDA" and a.prazo < hoje),
+        "acoes_no_prazo": round(100 * sum(1 for a in concl if a.concluida_em.date() <= a.prazo) / len(concl)) if concl else None,
+    }
+
+    # por mês: o ano filtrado, ou os últimos 12 meses
+    if ano:
+        meses = [(ano, m) for m in range(1, 13)]
+    else:
+        y, m = hoje.year, hoje.month
+        meses = []
+        for _ in range(12):
+            meses.insert(0, (y, m))
+            y, m = (y, m - 1) if m > 1 else (y - 1, 12)
+    cont_mes = Counter((r.data_recebimento.year, r.data_recebimento.month) for r in recs)
+    por_mes = [(f"{m:02d}/{str(y)[2:]}", cont_mes[(y, m)]) for y, m in meses]
+
+    pecas = Counter(r.part_number for r in recs).most_common(10)
+
     anos = sorted({r.data_recebimento.year for r in Reclamacao.query.all()}, reverse=True)
-    return render_template("dashboard.html", total=len(recs), clientes=clientes, pareto=pareto,
+    return render_template("dashboard.html", total=len(recs), ind=indicadores, por_mes=por_mes,
+                           maior_mes=max((n for _, n in por_mes), default=0) or 1, pecas=pecas, clientes=clientes, pareto=pareto,
                            maior=max(modos.values(), default=1), prazo=prazo, anos=anos,
                            lista_clientes=Cliente.query.order_by(Cliente.nome).all(),
                            filtro={"cliente": cliente_id, "ano": ano})

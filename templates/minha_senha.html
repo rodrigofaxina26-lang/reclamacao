@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block titulo %}Minha senha{% endblock %}
+{% block conteudo %}
+<form method="post" class="caixa login">
+  <h1>Trocar minha senha</h1>
+  <label>Senha atual <input name="atual" type="password" required autofocus></label>
+  <label>Nova senha (mín. 6 caracteres) <input name="senha" type="password" required minlength="6"></label>
+  <label>Repita a nova senha <input name="confirmacao" type="password" required minlength="6"></label>
+  <button type="submit">Salvar</button>
+</form>
+{% endblock %}

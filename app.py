@@ -32,6 +32,16 @@ def _criar_triggers():
     db.session.commit()
 
 
+def _migrar():
+    """Colunas novas em bancos já existentes (create_all não altera tabela)."""
+    cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(usuario)"))}
+    if "admin" not in cols:
+        db.session.execute(text("ALTER TABLE usuario ADD COLUMN admin BOOLEAN DEFAULT 0"))
+        # o primeiro usuário (criado no primeiro acesso) vira administrador
+        db.session.execute(text("UPDATE usuario SET admin = 1 WHERE id = (SELECT MIN(id) FROM usuario)"))
+    db.session.commit()
+
+
 def _seed_clientes():
     existentes = {c.nome for c in Cliente.query.all()}
     for nome in CLIENTES_INICIAIS:
@@ -60,6 +70,7 @@ def create_app(config=None):
     with app.app_context():
         db.create_all()
         _criar_triggers()
+        _migrar()
         _seed_clientes()
 
     from auth import bp as auth_bp
@@ -81,7 +92,8 @@ def create_app(config=None):
 
     @app.context_processor
     def _agora():
-        return {"agora": datetime.now()}
+        from servicos import eh_admin
+        return {"agora": datetime.now(), "eh_admin": eh_admin()}
 
     @app.cli.command("criar-usuario")
     @click.argument("login")
@@ -92,6 +104,7 @@ def create_app(config=None):
         u = Usuario.query.filter_by(login=login).first() or Usuario(login=login, nome=nome)
         u.nome = nome
         u.ativo = True
+        u.admin = True
         u.definir_senha(senha)
         db.session.add(u)
         db.session.commit()

@@ -180,7 +180,7 @@
   {% endif %}
 {% endif %}
 </section>
-<details class="zona-perigo">
+{% if eh_admin %}<details class="zona-perigo">
   <summary>Excluir reclamação</summary>
   <p>Apaga <strong>{{ rec.codigo }}</strong> por completo: equipe, causas, porquês, ações, evidências e
     análises do assistente (o histórico de alterações fica guardado para auditoria). <strong>Não tem como desfazer.</strong></p>
@@ -189,5 +189,5 @@
     <input name="confirmacao" placeholder="Digite {{ rec.codigo }} para confirmar" required autocomplete="off">
     <button class="perigo">Excluir definitivamente</button>
   </form>
-</details>
+</details>{% endif %}
 {% endblock %}

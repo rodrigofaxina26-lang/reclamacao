@@ -199,6 +199,7 @@ class Usuario(db.Model):  # login (adicionado na Fase 1)
     nome = db.Column(db.String(80), nullable=False)
     senha_hash = db.Column(db.String(256), nullable=False)
     ativo = db.Column(db.Boolean, default=True)
+    admin = db.Column(db.Boolean, default=False)   # exclui reclamações, gerencia usuários e backup
 
     def definir_senha(self, senha):
         self.senha_hash = generate_password_hash(senha)

@@ -1,6 +1,6 @@
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, date
 
 from flask import (Blueprint, render_template, request, redirect, url_for, flash,
                    session, current_app, send_from_directory, abort, jsonify)
@@ -8,9 +8,10 @@ from werkzeug.utils import secure_filename
 
 from auth import _validar_usuario
 from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, Usuario, STATUS
-from servicos import (write_lock, registrar, gerar_codigo, proximo_id_reclamacao, normalizar_pn, normalizar_modo,
+from servicos import (eh_admin, write_lock, registrar, gerar_codigo, proximo_id_reclamacao, normalizar_pn, normalizar_modo,
                       buscar_recorrencias, aplicar_campos, converter, ABAS, CAMPOS,
                       STATUS_EDITAVEIS)
+import backup
 from ishikawa_svg import gerar_svg
 from analise import SITUACOES, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO
 from models import CATEGORIAS_6M
@@ -36,6 +37,13 @@ def _voltar(rec, aba):
     return redirect(url_for("rec.detalhe", rid=rec.id, aba=aba))
 
 
+def _so_admin():
+    if not eh_admin():
+        flash("Só administradores podem fazer isso.", "erro")
+        return redirect(url_for("rec.lista"))
+    return None
+
+
 def _bloqueada(rec, aba):
     if rec.status == "FECHADA":
         flash("Reclamação fechada: não pode ser alterada.", "erro")
@@ -59,8 +67,34 @@ def lista():
     if pn:
         q = q.filter(Reclamacao.part_number.ilike(f"%{pn}%"))
     recs = q.order_by(Reclamacao.data_recebimento.desc()).all()
-    return render_template("lista.html", recs=recs, clientes=Cliente.query.order_by(Cliente.nome).all(),
+    return render_template("lista.html", recs=recs, pendencias=_pendencias(), clientes=Cliente.query.order_by(Cliente.nome).all(),
                            status_lista=STATUS, filtro={"cliente": cliente_id, "status": status, "pn": pn})
+
+
+ETAPAS_PRAZO = (("D3", "Contenção (D3)"), ("D4", "Causa raiz (D4)"), ("D8", "Fechamento (D8)"))
+
+
+def _pendencias():
+    """Etapas vencidas ou perto de vencer e ações com prazo até 7 dias, nas reclamações não fechadas."""
+    abertas = Reclamacao.query.filter(Reclamacao.status != "FECHADA").all()
+    etapas = []
+    for r in abertas:
+        for etapa, nome in ETAPAS_PRAZO:
+            sem = r.semaforo(etapa)
+            if sem in ("vermelho", "amarelo"):
+                etapas.append({"rec": r, "etapa": etapa, "nome": nome, "prazo": r.prazo(etapa), "sem": sem})
+                break   # só a etapa mais urgente de cada reclamação
+    etapas.sort(key=lambda e: e["prazo"])
+    hoje = date.today()
+    primeiro_nome = (session.get("nome") or "").split(" ")[0].lower()
+    acoes = []
+    for r in abertas:
+        for a in r.acoes:
+            if a.status != "CONCLUIDA" and a.prazo and (a.prazo - hoje).days <= 7:
+                acoes.append({"rec": r, "acao": a, "dias": (a.prazo - hoje).days,
+                              "minha": bool(primeiro_nome) and primeiro_nome in (a.responsavel or "").lower()})
+    acoes.sort(key=lambda x: (not x["minha"], x["acao"].prazo))
+    return {"etapas": etapas, "acoes": acoes}
 
 
 # ---------------- abertura ----------------
@@ -233,6 +267,8 @@ def reclamacao_excluir(rid):
     """Apaga a reclamação inteira (equipe, causas, ações, evidências e análises da IA).
     O histórico fica guardado (é imutável), com o registro da exclusão.
     Exige digitar o código da reclamação para confirmar."""
+    if (r := _so_admin()):
+        return r
     rec = _obter(rid)
     if request.form.get("confirmacao", "").strip().upper() != rec.codigo.upper():
         flash(f"Para excluir, digite o código {rec.codigo} exatamente.", "erro")
@@ -260,6 +296,8 @@ def reclamacao_excluir(rid):
 
 @bp.route("/usuarios/<int:uid>/excluir", methods=["POST"])
 def usuario_excluir(uid):
+    if (r := _so_admin()):
+        return r
     u = db.get_or_404(Usuario, uid)
     if u.login == session["usuario"]:
         flash("Você não pode excluir o próprio usuário.", "erro")
@@ -271,6 +309,38 @@ def usuario_excluir(uid):
     return redirect(url_for("rec.usuarios"))
 
 
+@bp.route("/usuarios/<int:uid>/admin", methods=["POST"])
+def usuario_admin(uid):
+    if (r := _so_admin()):
+        return r
+    u = db.get_or_404(Usuario, uid)
+    if u.login == session["usuario"]:
+        flash("Você não pode tirar o próprio perfil de administrador.", "erro")
+    else:
+        with write_lock:
+            u.admin = not u.admin
+            db.session.commit()
+        flash(f"'{u.login}' agora é {'administrador' if u.admin else 'analista'}.", "ok")
+    return redirect(url_for("rec.usuarios"))
+
+
+# ---------------- backup ----------------
+@bp.route("/backup", methods=["GET", "POST"])
+def backups():
+    if (r := _so_admin()):
+        return r
+    if request.method == "POST":
+        banco = current_app.config["SQLALCHEMY_DATABASE_URI"].removeprefix("sqlite:///")
+        try:
+            caminho = backup.fazer(current_app.instance_path, banco)
+            flash(f"Backup criado: {caminho}", "ok")
+        except Exception as e:
+            flash(f"Falha no backup: {e}", "erro")
+        return redirect(url_for("rec.backups"))
+    return render_template("backup.html", pasta=backup.pasta_destino(current_app.instance_path),
+                           itens=backup.listar(current_app.instance_path), dias=backup.DIAS_GUARDAR)
+
+
 @bp.errorhandler(413)
 def _grande_demais(_):
     flash("Arquivo maior que 20 MB.", "erro")
@@ -280,6 +350,8 @@ def _grande_demais(_):
 # ---------------- usuários ----------------
 @bp.route("/usuarios", methods=["GET", "POST"])
 def usuarios():
+    if (r := _so_admin()):
+        return r
     if request.method == "POST":
         f = request.form
         login_, nome = f.get("login", "").strip(), f.get("nome", "").strip()
@@ -301,6 +373,8 @@ def usuarios():
 
 @bp.route("/usuarios/<int:uid>/ativo", methods=["POST"])
 def usuario_ativo(uid):
+    if (r := _so_admin()):
+        return r
     u = db.get_or_404(Usuario, uid)
     if u.login == session["usuario"]:
         flash("Você não pode desativar o próprio usuário.", "erro")
@@ -314,6 +388,8 @@ def usuario_ativo(uid):
 
 @bp.route("/usuarios/<int:uid>/senha", methods=["POST"])
 def usuario_senha(uid):
+    if (r := _so_admin()):
+        return r
     u = db.get_or_404(Usuario, uid)
     erro = _validar_usuario(u.login, u.nome, request.form.get("senha", ""), request.form.get("confirmacao", ""))
     if erro:

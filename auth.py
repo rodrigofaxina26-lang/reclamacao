@@ -54,7 +54,7 @@ def primeiro_acesso():
         else:
             with write_lock:
                 if not Usuario.query.first():
-                    u = Usuario(login=login_, nome=nome)
+                    u = Usuario(login=login_, nome=nome, admin=True)
                     u.definir_senha(f["senha"])
                     db.session.add(u)
                     db.session.commit()
@@ -84,6 +84,26 @@ def criar_conta():
             flash("Conta criada. Entre com o login e a senha.", "ok")
             return redirect(url_for("auth.login"))
     return render_template("usuario_form.html", titulo="Criar conta")
+
+
+@bp.route("/minha-senha", methods=["GET", "POST"])
+def minha_senha():
+    if "usuario" not in session:
+        return redirect(url_for("auth.login"))
+    u = Usuario.query.filter_by(login=session["usuario"]).first_or_404()
+    if request.method == "POST":
+        f = request.form
+        if not u.conferir_senha(f.get("atual", "")):
+            flash("Senha atual incorreta.", "erro")
+        elif (erro := _validar_usuario(u.login, u.nome, f.get("senha", ""), f.get("confirmacao", ""))):
+            flash(erro, "erro")
+        else:
+            with write_lock:
+                u.definir_senha(f["senha"])
+                db.session.commit()
+            flash("Senha alterada.", "ok")
+            return redirect(url_for("rec.lista"))
+    return render_template("minha_senha.html")
 
 
 @bp.route("/logout")

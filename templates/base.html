@@ -15,8 +15,9 @@
     <a href="{{ url_for('rec.lista') }}">Reclamações</a>
     <a href="{{ url_for('rec.nova') }}">+ Nova</a>
     <a href="{{ url_for('ana.dashboard') }}">Dashboard</a>
-    <a href="{{ url_for('rec.usuarios') }}">Usuários</a>
-    <span class="usuario">{{ session.nome }}</span>
+    {% if eh_admin %}<a href="{{ url_for('rec.usuarios') }}">Usuários</a>
+    <a href="{{ url_for('rec.backups') }}">Backup</a>{% endif %}
+    <a class="usuario" href="{{ url_for('auth.minha_senha') }}" title="Trocar minha senha">{{ session.nome }}</a>
     <a href="{{ url_for('auth.logout') }}">Sair</a>
   </nav>
   {% endif %}
