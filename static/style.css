@@ -60,3 +60,8 @@ fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .pareto-80 td { background: #fff7e0; }
 .envio { white-space: pre-wrap; max-height: 420px; overflow: auto; background: #f7f7f7; border: 1px solid #e3e3e3; padding: 8px; font-size: 12px; }
 .sugestao { border: 2px dashed #b8860b; }
+
+form.inline { display: inline; margin: 0 0 0 8px; }
+button.perigo { background: #b42318; color: #fff; }
+.zona-perigo { margin-top: 32px; border: 1px solid #f1b5ae; border-radius: 6px; padding: 8px 12px; }
+.zona-perigo summary { cursor: pointer; color: #b42318; font-weight: 600; }

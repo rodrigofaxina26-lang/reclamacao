@@ -48,7 +48,9 @@
 
   {% for cat in categorias %}{% for c in rec.causas if c.categoria == cat %}
   <div class="causa causa-{{ c.situacao|lower }}" id="causa-{{ c.id }}">
-    <div class="causa-topo"><span class="tag">{{ c.categoria }}</span> <strong>{{ c.descricao }}</strong></div>
+    <div class="causa-topo"><span class="tag">{{ c.categoria }}</span> <strong>{{ c.descricao }}</strong>
+      {% if not fechada %}<form method="post" action="{{ url_for('ana.causa_excluir', rid=rec.id, cid=c.id) }}" class="inline"
+        onsubmit="return confirm('Excluir esta causa e os 5 porquês ligados a ela?')"><button class="link">excluir</button></form>{% endif %}</div>
     <form method="post" action="{{ url_for('ana.causa_salvar', rid=rec.id, cid=c.id) }}" class="linha">
       <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
       <select name="situacao">{% for s in situacoes %}<option {{ 'selected' if c.situacao == s }}>{{ s }}</option>{% endfor %}</select>
@@ -84,10 +86,12 @@
   <h3>Conclusão da causa raiz</h3>
 
 {% elif aba == 'D5' %}
-  <table class="tabela"><thead><tr><th>Tipo</th><th>Foco</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Status</th></tr></thead><tbody>
+  <table class="tabela"><thead><tr><th>Tipo</th><th>Foco</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Status</th><th></th></tr></thead><tbody>
   {% for a in rec.acoes %}<tr><td>{{ a.tipo }}</td><td>{{ tipos_porque[a.foco] }}</td><td>{{ a.descricao }}</td><td>{{ a.responsavel }}</td>
-    <td class="{{ 'atrasado' if a.status != 'CONCLUIDA' and a.prazo < hoje }}">{{ a.prazo.strftime('%d/%m/%Y') }}</td><td>{{ a.status }}</td></tr>
-  {% else %}<tr><td colspan="6" class="vazio">Nenhuma ação.</td></tr>{% endfor %}
+    <td class="{{ 'atrasado' if a.status != 'CONCLUIDA' and a.prazo < hoje }}">{{ a.prazo.strftime('%d/%m/%Y') }}</td><td>{{ a.status }}</td>
+    <td>{% if not fechada %}<form method="post" action="{{ url_for('ana.acao_excluir', rid=rec.id, aid=a.id) }}"
+      onsubmit="return confirm('Excluir esta ação?')"><input type="hidden" name="aba" value="D5"><button class="link">excluir</button></form>{% endif %}</td></tr>
+  {% else %}<tr><td colspan="7" class="vazio">Nenhuma ação.</td></tr>{% endfor %}
   </tbody></table>
   {% if not fechada %}
   <h3>Nova ação</h3>
@@ -165,7 +169,9 @@
 
 {% if aba != 'HIST' %}
   <h3>Evidências ({{ aba }})</h3>
-  <ul>{% for e in evidencias %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}</li>
+  <ul>{% for e in evidencias %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}
+    {% if not fechada %}<form method="post" action="{{ url_for('rec.evidencia_excluir', eid=e.id) }}" class="inline"
+      onsubmit="return confirm('Excluir este arquivo?')"><button class="link">excluir</button></form>{% endif %}</li>
   {% else %}<li class="vazio">Nenhuma.</li>{% endfor %}</ul>
   {% if not fechada %}
   <form method="post" enctype="multipart/form-data" action="{{ url_for('rec.evidencia_upload', rid=rec.id, aba=aba) }}" class="linha">
@@ -174,4 +180,14 @@
   {% endif %}
 {% endif %}
 </section>
+<details class="zona-perigo">
+  <summary>Excluir reclamação</summary>
+  <p>Apaga <strong>{{ rec.codigo }}</strong> por completo: equipe, causas, porquês, ações, evidências e
+    análises do assistente (o histórico de alterações fica guardado para auditoria). <strong>Não tem como desfazer.</strong></p>
+  <form method="post" action="{{ url_for('rec.reclamacao_excluir', rid=rec.id) }}" class="linha"
+    onsubmit="return confirm('Excluir {{ rec.codigo }} definitivamente?')">
+    <input name="confirmacao" placeholder="Digite {{ rec.codigo }} para confirmar" required autocomplete="off">
+    <button class="perigo">Excluir definitivamente</button>
+  </form>
+</details>
 {% endblock %}

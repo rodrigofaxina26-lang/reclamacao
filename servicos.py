@@ -89,7 +89,17 @@ def gerar_codigo():
     ultimo = db.session.query(func.max(Reclamacao.codigo)).filter(
         Reclamacao.codigo.like(prefixo + "%")).scalar()
     n = int(ultimo.rsplit("-", 1)[1]) + 1 if ultimo else 1
+    # códigos de reclamações excluídas não voltam a ser usados (o histórico delas continua no banco)
+    for (acao,) in db.session.query(Historico.acao).filter(Historico.acao.like(f"Reclamação {prefixo}% excluída%")):
+        n = max(n, int(acao.split()[1].rsplit("-", 1)[1]) + 1)
     return f"{prefixo}{n:04d}"
+
+
+def proximo_id_reclamacao():
+    """O SQLite reaproveita o id da última linha apagada; o histórico de uma reclamação excluída
+    ficaria grudado na nova. Chamar dentro do write_lock."""
+    return max(db.session.query(func.max(Reclamacao.id)).scalar() or 0,
+               db.session.query(func.max(Historico.reclamacao_id)).scalar() or 0) + 1
 
 
 def buscar_recorrencias(pn, modo, excluir_id=None):

@@ -83,6 +83,20 @@ def causa_salvar(rid, cid):
 
 
 # ---------------- 5 Porquês ----------------
+@bp.route("/<int:rid>/causas/<int:cid>/excluir", methods=["POST"])
+def causa_excluir(rid, cid):
+    rec, bloqueio = _rec_editavel(rid, "D4")
+    if bloqueio:
+        return bloqueio
+    c = _filho(CausaIshikawa, cid, rec)
+    with write_lock:
+        Porque.query.filter_by(causa_id=c.id).delete()   # a cadeia de porquês sai junto
+        registrar(rec.id, f"D4 · Causa excluída [{c.categoria}]: {c.descricao}")
+        db.session.delete(c)
+        db.session.commit()
+    return _voltar(rec, "D4", "#ishikawa")
+
+
 @bp.route("/<int:rid>/causas/<int:cid>/porques/<tipo>", methods=["POST"])
 def porques_salvar(rid, cid, tipo):
     if tipo not in TIPOS_PORQUE:
@@ -162,6 +176,19 @@ def acao_status(rid, aid):
             a.status, a.concluida_em = novo, concluida
             db.session.commit()
     return _voltar(rec, "D6")
+
+
+@bp.route("/<int:rid>/acoes/<int:aid>/excluir", methods=["POST"])
+def acao_excluir(rid, aid):
+    rec, bloqueio = _rec_editavel(rid, "D5")
+    if bloqueio:
+        return bloqueio
+    a = _filho(Acao, aid, rec)
+    with write_lock:
+        registrar(rec.id, f"D5 · Ação excluída [{a.tipo}/{a.foco}]: {a.descricao}")
+        db.session.delete(a)
+        db.session.commit()
+    return _voltar(rec, request.form.get("aba") if request.form.get("aba") in ("D5", "D6") else "D5")
 
 
 # ---------------- Fechar 8D ----------------

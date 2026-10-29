@@ -17,6 +17,7 @@
     </td>
     <td>{% if u.login != session.usuario %}
       <form method="post" action="{{ url_for('rec.usuario_ativo', uid=u.id) }}"><button class="link">{{ 'desativar' if u.ativo else 'ativar' }}</button></form>
+      <form method="post" action="{{ url_for('rec.usuario_excluir', uid=u.id) }}" onsubmit="return confirm('Excluir o usuário {{ u.login }}?')"><button class="link">excluir</button></form>
     {% endif %}</td>
   </tr>
   {% endfor %}

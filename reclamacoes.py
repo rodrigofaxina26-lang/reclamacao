@@ -1,4 +1,5 @@
 import os
+import shutil
 from datetime import datetime
 
 from flask import (Blueprint, render_template, request, redirect, url_for, flash,
@@ -7,7 +8,7 @@ from werkzeug.utils import secure_filename
 
 from auth import _validar_usuario
 from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, Usuario, STATUS
-from servicos import (write_lock, registrar, gerar_codigo, normalizar_pn, normalizar_modo,
+from servicos import (write_lock, registrar, gerar_codigo, proximo_id_reclamacao, normalizar_pn, normalizar_modo,
                       buscar_recorrencias, aplicar_campos, converter, ABAS, CAMPOS,
                       STATUS_EDITAVEIS)
 from ishikawa_svg import gerar_svg
@@ -80,7 +81,7 @@ def nova():
             return render_template("nova.html", clientes=clientes, f=f)
 
         with write_lock:
-            rec = Reclamacao(codigo=gerar_codigo(), cliente_id=cliente.id,
+            rec = Reclamacao(id=proximo_id_reclamacao(), codigo=gerar_codigo(), cliente_id=cliente.id,
                              num_reclamacao_cliente=f.get("num_reclamacao_cliente", "").strip() or None,
                              part_number=pn, lote=f.get("lote", "").strip() or None,
                              qtd_suspeita=qtd, modo_falha=modo, data_recebimento=recebida)
@@ -208,6 +209,66 @@ def evidencia_baixar(eid):
     ev = db.get_or_404(Evidencia, eid)
     return send_from_directory(current_app.config["UPLOAD_FOLDER"], ev.arquivo,
                                as_attachment=True, download_name=ev.arquivo.split("_", 1)[-1])
+
+
+@bp.route("/evidencia/<int:eid>/excluir", methods=["POST"])
+def evidencia_excluir(eid):
+    ev = db.get_or_404(Evidencia, eid)
+    rec = _obter(ev.reclamacao_id)
+    if (r := _bloqueada(rec, ev.etapa)):
+        return r
+    caminho = os.path.join(current_app.config["UPLOAD_FOLDER"], ev.arquivo)
+    with write_lock:
+        registrar(rec.id, f"{ev.etapa} · Evidência excluída: {ev.arquivo.split('_', 1)[-1]}")
+        db.session.delete(ev)
+        db.session.commit()
+        if os.path.isfile(caminho):
+            os.remove(caminho)
+    flash("Evidência excluída.", "ok")
+    return _voltar(rec, ev.etapa)
+
+
+@bp.route("/<int:rid>/excluir", methods=["POST"])
+def reclamacao_excluir(rid):
+    """Apaga a reclamação inteira (equipe, causas, ações, evidências e análises da IA).
+    O histórico fica guardado (é imutável), com o registro da exclusão.
+    Exige digitar o código da reclamação para confirmar."""
+    rec = _obter(rid)
+    if request.form.get("confirmacao", "").strip().upper() != rec.codigo.upper():
+        flash(f"Para excluir, digite o código {rec.codigo} exatamente.", "erro")
+        return _voltar(rec, "D1")
+    pasta_up = current_app.config["UPLOAD_FOLDER"]
+    arquivos = [os.path.join(pasta_up, e.arquivo) for e in Evidencia.query.filter_by(reclamacao_id=rid)]
+    banco = os.path.splitext(os.path.basename(current_app.config["SQLALCHEMY_DATABASE_URI"]))[0]
+    analises = os.path.join(current_app.instance_path,
+                            "analises" if banco == "reclamacao" else f"analises_{banco}", str(rid))
+    codigo = rec.codigo
+    with write_lock:
+        Evidencia.query.filter_by(reclamacao_id=rid).delete()
+        # o histórico é imutável: fica no banco, com o registro de quem excluiu
+        registrar(rid, f"Reclamação {codigo} excluída ({rec.cliente.nome}, PN {rec.part_number}, {rec.modo_falha})")
+        db.session.delete(rec)   # equipe, causas, porquês e ações saem em cascata
+        db.session.commit()
+        for a in arquivos:
+            if os.path.isfile(a):
+                os.remove(a)
+        shutil.rmtree(analises, ignore_errors=True)
+    current_app.logger.warning("Reclamação %s excluída por %s", codigo, session.get("usuario"))
+    flash(f"Reclamação {codigo} excluída.", "ok")
+    return redirect(url_for("rec.lista"))
+
+
+@bp.route("/usuarios/<int:uid>/excluir", methods=["POST"])
+def usuario_excluir(uid):
+    u = db.get_or_404(Usuario, uid)
+    if u.login == session["usuario"]:
+        flash("Você não pode excluir o próprio usuário.", "erro")
+    else:
+        with write_lock:
+            db.session.delete(u)   # o histórico guarda o login como texto, nada se perde
+            db.session.commit()
+        flash(f"Usuário '{u.login}' excluído.", "ok")
+    return redirect(url_for("rec.usuarios"))
 
 
 @bp.errorhandler(413)
