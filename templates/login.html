@@ -6,5 +6,6 @@
   <label>Usuário <input name="login" required autofocus></label>
   <label>Senha <input name="senha" type="password" required></label>
   <button type="submit">Entrar</button>
+  <p class="legenda">Não tem conta? <a href="{{ url_for('auth.criar_conta') }}">Criar conta</a></p>
 </form>
 {% endblock %}

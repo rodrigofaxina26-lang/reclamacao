@@ -23,8 +23,11 @@ def login():
     if not Usuario.query.first():
         return redirect(url_for("auth.primeiro_acesso"))
     if request.method == "POST":
-        u = Usuario.query.filter_by(login=request.form.get("login", "").strip(), ativo=True).first()
-        if u and u.conferir_senha(request.form.get("senha", "")):
+        u = Usuario.query.filter_by(login=request.form.get("login", "").strip()).first()
+        if u and not u.ativo and u.conferir_senha(request.form.get("senha", "")):
+            flash("Conta ainda não liberada (ou desativada). Peça a um usuário do sistema para "
+                  "ativá-la na tela Usuários.", "erro")
+        elif u and u.conferir_senha(request.form.get("senha", "")):
             session.clear()
             session["usuario"] = u.login
             session["nome"] = u.nome
@@ -33,7 +36,8 @@ def login():
             if not destino.startswith("/") or destino.startswith("//"):
                 destino = url_for("rec.lista")
             return redirect(destino)
-        flash("Usuário ou senha inválidos.", "erro")
+        else:
+            flash("Usuário ou senha inválidos.", "erro")
     return render_template("login.html")
 
 
@@ -59,6 +63,29 @@ def primeiro_acesso():
             return redirect(url_for("auth.login"))
     return render_template("usuario_form.html", titulo="Primeiro acesso",
                            aviso="Nenhum usuário cadastrado ainda. Crie o primeiro usuário do sistema.")
+
+
+@bp.route("/criar-conta", methods=["GET", "POST"])
+def criar_conta():
+    """Cadastro pela tela de login. A conta nasce desativada: um usuário ativo libera em Usuários."""
+    if request.method == "POST":
+        f = request.form
+        login_, nome = f.get("login", "").strip(), f.get("nome", "").strip()
+        erro = _validar_usuario(login_, nome, f.get("senha", ""), f.get("confirmacao", ""))
+        if not erro and Usuario.query.filter_by(login=login_).first():
+            erro = f"O login '{login_}' já existe."
+        if erro:
+            flash(erro, "erro")
+        else:
+            with write_lock:
+                u = Usuario(login=login_, nome=nome, ativo=False)
+                u.definir_senha(f["senha"])
+                db.session.add(u)
+                db.session.commit()
+            flash("Conta criada. Ela será liberada quando um usuário do sistema ativá-la na tela Usuários.", "ok")
+            return redirect(url_for("auth.login"))
+    return render_template("usuario_form.html", titulo="Criar conta",
+                           aviso="Depois de criada, a conta precisa ser liberada por um usuário do sistema.")
 
 
 @bp.route("/logout")
