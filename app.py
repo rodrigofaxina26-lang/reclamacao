@@ -9,7 +9,8 @@ from sqlalchemy import text
 
 from models import db, Cliente, Usuario
 
-CLIENTES_INICIAIS = ["FORVIA", "HWASHIN", "MARELLI", "BOSCH", "CONTINENTAL", "VOLVO"]
+CLIENTES_INICIAIS = ["FORVIA", "FORVIA QUATRO BARRAS", "HWASHIN", "HYUNDAI", "WHIRLPOOL", "MARELLI",
+                     "PUREM", "BOSCH", "CONTINENTAL", "TENNECO", "VOLVO", "CNH", "BROSE"]
 
 
 def _secret_key(instance_path):
