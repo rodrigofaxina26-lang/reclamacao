@@ -267,9 +267,18 @@ def dashboard():
 
     pecas = Counter(r.part_number for r in recs).most_common(10)
 
+    custo_cliente, custo_tipo = Counter(), Counter()
+    for r in recs:
+        for c in r.custos:
+            custo_cliente[r.cliente.nome] += c.valor
+            custo_tipo[c.tipo] += c.valor
+    custos = {"total": sum(custo_cliente.values()), "cliente": custo_cliente.most_common(),
+              "tipo": custo_tipo.most_common(),
+              "top": sorted((r for r in recs if r.custos), key=lambda r: r.custo_total, reverse=True)[:5]}
+
     anos = sorted({r.data_recebimento.year for r in Reclamacao.query.all()}, reverse=True)
     return render_template("dashboard.html", total=len(recs), ind=indicadores, por_mes=por_mes,
-                           maior_mes=max((n for _, n in por_mes), default=0) or 1, pecas=pecas, clientes=clientes, pareto=pareto,
+                           maior_mes=max((n for _, n in por_mes), default=0) or 1, pecas=pecas, custos=custos, clientes=clientes, pareto=pareto,
                            maior=max(modos.values(), default=1), prazo=prazo, anos=anos,
                            lista_clientes=Cliente.query.order_by(Cliente.nome).all(),
                            filtro={"cliente": cliente_id, "ano": ano})

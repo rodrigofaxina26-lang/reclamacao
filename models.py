@@ -75,6 +75,11 @@ class Reclamacao(db.Model):
     porques = db.relationship("Porque", cascade="all, delete-orphan",
                               order_by="Porque.tipo, Porque.ordem")
     acoes = db.relationship("Acao", cascade="all, delete-orphan")
+    custos = db.relationship("Custo", cascade="all, delete-orphan", order_by="Custo.data")
+
+    @property
+    def custo_total(self):
+        return sum(c.valor for c in self.custos)
 
     # ---- prazos (KPI que o cliente cobra) ----
     def prazo(self, etapa):
@@ -171,6 +176,19 @@ class Acao(db.Model):  # D5/D6
     prazo = db.Column(db.Date)
     status = db.Column(db.String(12), default="ABERTA")
     concluida_em = db.Column(db.DateTime)
+
+
+TIPOS_CUSTO = ["Seleção / retrabalho", "Frete / transporte", "Refugo / sucata", "Técnico no cliente / viagem",
+               "Débito do cliente", "Horas de engenharia / análise", "Outros"]
+
+
+class Custo(db.Model):  # custo da reclamação: fica só no sistema, nunca vai para a IA
+    id = db.Column(db.Integer, primary_key=True)
+    reclamacao_id = db.Column(db.Integer, db.ForeignKey("reclamacao.id"), index=True)
+    tipo = db.Column(db.String(40))                                       # um de TIPOS_CUSTO
+    descricao = db.Column(db.String(200))
+    valor = db.Column(db.Float, nullable=False)                           # R$
+    data = db.Column(db.Date)
 
 
 class Evidencia(db.Model):

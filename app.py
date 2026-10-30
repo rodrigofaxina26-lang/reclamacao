@@ -86,6 +86,10 @@ def create_app(config=None):
     def _fmt_dt(v):
         return v.strftime("%d/%m/%Y %H:%M") if v else ""
 
+    @app.template_filter("reais")
+    def _fmt_reais(v):
+        return "R$ " + f"{v or 0:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     @app.template_filter("dtinput")
     def _fmt_dtinput(v):
         return v.strftime("%Y-%m-%dT%H:%M") if v else ""

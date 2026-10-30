@@ -13,7 +13,7 @@ ABAS = [
     ("DADOS", "Dados"), ("D1", "D1 Equipe"), ("D2", "D2 Problema"),
     ("D3", "D3 Contenção"), ("D4", "D4 Causa raiz"), ("D5", "D5 Ações corretivas"),
     ("D6", "D6 Implementação"), ("D7", "D7 Prevenção"), ("D8", "D8 Encerramento"),
-    ("HIST", "Histórico"),
+    ("CUST", "Custos"), ("HIST", "Histórico"),
 ]
 
 # (campo do modelo, rótulo, tipo) - tipos: text, textarea, int, int0, datetime, bool, tri, status

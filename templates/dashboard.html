@@ -19,6 +19,7 @@
   <div class="kpi"><span>{{ ind.media_fechar if ind.media_fechar is not none else '-' }}</span>dias em média para fechar</div>
   <div class="kpi"><span>{{ ind.reincidentes }}</span>reincidentes (mesmo PN e modo)</div>
   <div class="kpi"><span>{{ ind.acoes_vencidas }}</span>ações vencidas de {{ ind.acoes }}</div>
+  <div class="kpi"><span>{{ custos.total|reais }}</span>custo das reclamações</div>
   <div class="kpi"><span>{{ ind.acoes_no_prazo ~ '%' if ind.acoes_no_prazo is not none else '-' }}</span>ações concluídas no prazo</div>
 </div>
 
@@ -60,6 +61,31 @@
     </table>
   </section>
 </div>
+
+{% if custos.total %}
+<div class="painel" style="margin-top:16px">
+  <section class="caixa">
+    <h3 style="margin-top:0">Custo por cliente</h3>
+    <table class="tabela"><tbody>{% for nome, v in custos.cliente %}
+      <tr><td>{{ nome }}</td><td class="nowrap" style="text-align:right">{{ v|reais }}</td>
+        <td style="width:45%"><div class="barra" style="width:{{ (100 * v / custos.cliente[0][1])|round }}%"></div></td></tr>
+    {% endfor %}</tbody></table>
+    <h3>Custo por tipo</h3>
+    <table class="tabela"><tbody>{% for tipo, v in custos.tipo %}
+      <tr><td>{{ tipo }}</td><td class="nowrap" style="text-align:right">{{ v|reais }}</td>
+        <td style="width:45%"><div class="barra" style="width:{{ (100 * v / custos.tipo[0][1])|round }}%"></div></td></tr>
+    {% endfor %}</tbody></table>
+  </section>
+  <section class="caixa">
+    <h3 style="margin-top:0">Reclamações mais caras</h3>
+    <table class="tabela"><thead><tr><th>Reclamação</th><th>PN · modo de falha</th><th style="text-align:right">Custo</th></tr></thead>
+    <tbody>{% for r in custos.top %}
+      <tr><td><a href="{{ url_for('rec.detalhe', rid=r.id, aba='CUST') }}">{{ r.codigo }}</a><br><small>{{ r.cliente.nome }}</small></td>
+        <td>{{ r.part_number }} · {{ r.modo_falha }}</td><td class="nowrap" style="text-align:right">{{ r.custo_total|reais }}</td></tr>
+    {% endfor %}</tbody></table>
+  </section>
+</div>
+{% endif %}
 
 <section class="caixa" style="margin-top:16px">
   <h3 style="margin-top:0">Peças com mais reclamações</h3>

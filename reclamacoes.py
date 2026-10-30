@@ -7,7 +7,7 @@ from flask import (Blueprint, render_template, request, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 
 from auth import _validar_usuario
-from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, Usuario, STATUS
+from models import db, Reclamacao, Cliente, MembroEquipe, Evidencia, Historico, Usuario, STATUS, Custo, TIPOS_CUSTO
 from servicos import (eh_admin, write_lock, registrar, gerar_codigo, proximo_id_reclamacao, normalizar_pn, normalizar_modo,
                       buscar_recorrencias, aplicar_campos, converter, ABAS, CAMPOS,
                       STATUS_EDITAVEIS)
@@ -156,7 +156,8 @@ def detalhe(rid):
                            status_editaveis=STATUS_EDITAVEIS,
                            svg=gerar_svg(rec.causas, rec.modo_falha) if aba == "D4" else "",
                            categorias=CATEGORIAS_6M, situacoes=SITUACOES, tipos_porque=TIPOS_PORQUE,
-                           tipos_acao=TIPOS_ACAO, status_acao=STATUS_ACAO, hoje=datetime.now().date())
+                           tipos_acao=TIPOS_ACAO, status_acao=STATUS_ACAO, tipos_custo=TIPOS_CUSTO,
+                           hoje=datetime.now().date())
 
 
 @bp.route("/<int:rid>/salvar/<aba>", methods=["POST"])
@@ -260,6 +261,51 @@ def evidencia_excluir(eid):
             os.remove(caminho)
     flash("Evidência excluída.", "ok")
     return _voltar(rec, ev.etapa)
+
+
+# ---------------- custos ----------------
+def _valor_reais(txt):
+    """Aceita 1.234,56 / 1234,56 / 1234.56."""
+    txt = (txt or "").strip().replace("R$", "").replace(" ", "")
+    if "," in txt:
+        txt = txt.replace(".", "").replace(",", ".")
+    return round(float(txt), 2)
+
+
+@bp.route("/<int:rid>/custos", methods=["POST"])
+def custo_add(rid):
+    """Liberado mesmo com a reclamação fechada: o débito do cliente costuma chegar depois."""
+    rec = _obter(rid)
+    f = request.form
+    try:
+        valor = _valor_reais(f.get("valor"))
+        data = datetime.strptime(f.get("data", ""), "%Y-%m-%d").date() if f.get("data") else date.today()
+    except ValueError:
+        flash("Valor ou data inválidos.", "erro")
+        return _voltar(rec, "CUST")
+    if f.get("tipo") not in TIPOS_CUSTO or valor <= 0:
+        flash("Escolha o tipo e informe um valor maior que zero.", "erro")
+        return _voltar(rec, "CUST")
+    desc = f.get("descricao", "").strip()[:200] or None
+    with write_lock:
+        db.session.add(Custo(reclamacao_id=rec.id, tipo=f["tipo"], descricao=desc, valor=valor, data=data))
+        registrar(rec.id, f"Custo incluído [{f['tipo']}]: R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+                  + (f" - {desc}" if desc else ""))
+        db.session.commit()
+    return _voltar(rec, "CUST")
+
+
+@bp.route("/<int:rid>/custos/<int:cid>/excluir", methods=["POST"])
+def custo_excluir(rid, cid):
+    rec = _obter(rid)
+    c = db.get_or_404(Custo, cid)
+    if c.reclamacao_id != rec.id:
+        abort(404)
+    with write_lock:
+        registrar(rec.id, f"Custo excluído [{c.tipo}]: R$ {c.valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+        db.session.delete(c)
+        db.session.commit()
+    return _voltar(rec, "CUST")
 
 
 @bp.route("/<int:rid>/excluir", methods=["POST"])
