@@ -2,10 +2,15 @@
 {% from "_semaforo.html" import sem %}
 {% block conteudo %}
 <h1>Reclamações</h1>
-{% set n_pend = pendencias.etapas|length + pendencias.acoes|length %}
+{% set n_pend = pendencias.etapas|length + pendencias.acoes|length + pendencias.eficacia|length %}
 {% if n_pend %}
 <details class="caixa pendencias" {{ 'open' if pendencias.etapas|selectattr('sem', 'equalto', 'vermelho')|list or pendencias.acoes|selectattr('dias', 'lt', 0)|list }}>
-  <summary><strong>⚠ Prazos: {{ pendencias.etapas|length }} etapa(s) e {{ pendencias.acoes|length }} ação(ões) vencidas ou vencendo</strong></summary>
+  <summary><strong>⚠ Prazos: {{ pendencias.etapas|length }} etapa(s) e {{ pendencias.acoes|length }} ação(ões) vencidas ou vencendo{% if pendencias.eficacia %} · {{ pendencias.eficacia|length }} pronta(s) para verificar eficácia{% endif %}</strong></summary>
+  {% if pendencias.eficacia %}
+  <h4>Prontas para verificar a eficácia (D8)</h4>
+  <ul>{% for e in pendencias.eficacia %}<li><a href="{{ url_for('rec.detalhe', rid=e.rec.id, aba='D8') }}">{{ e.rec.codigo }}</a> ·
+    {{ e.rec.cliente.nome }} · {{ e.rec.part_number }}: {{ e.lotes }} lotes faturados desde {{ e.base|dt }}, sem nova reclamação</li>{% endfor %}</ul>
+  {% endif %}
   <div class="painel">
   <div>
     <h4>Etapas do 8D (prazo do cliente)</h4>

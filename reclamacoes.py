@@ -13,7 +13,7 @@ from servicos import (eh_admin, write_lock, registrar, gerar_codigo, proximo_id_
                       STATUS_EDITAVEIS)
 import backup
 from ishikawa_svg import gerar_svg
-from analise import SITUACOES, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO
+from analise import SITUACOES, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO, eficacia, LOTES_EFICACIA
 from models import CATEGORIAS_6M
 
 bp = Blueprint("rec", __name__)
@@ -94,7 +94,14 @@ def _pendencias():
                 acoes.append({"rec": r, "acao": a, "dias": (a.prazo - hoje).days,
                               "minha": bool(primeiro_nome) and primeiro_nome in (a.responsavel or "").lower()})
     acoes.sort(key=lambda x: (not x["minha"], x["acao"].prazo))
-    return {"etapas": etapas, "acoes": acoes}
+    # ações todas concluídas, 3+ lotes faturados depois e nenhuma reclamação nova: hora de verificar a eficácia
+    prontas = []
+    for r in abertas:
+        if r.d8_eficaz is not True and r.acoes and all(a.status == "CONCLUIDA" for a in r.acoes):
+            ef = eficacia(r)
+            if ef and ef.get("pronta"):
+                prontas.append({"rec": r, "lotes": len(ef["nfs"]), "base": ef["base"]})
+    return {"etapas": etapas, "acoes": acoes, "eficacia": prontas}
 
 
 # ---------------- abertura ----------------
@@ -155,6 +162,7 @@ def detalhe(rid):
                            recorrencias=buscar_recorrencias(rec.part_number, rec.modo_falha, rec.id),
                            status_editaveis=STATUS_EDITAVEIS,
                            svg=gerar_svg(rec.causas, rec.modo_falha) if aba == "D4" else "",
+                           ef=eficacia(rec) if aba == "D8" else None, lotes_eficacia=LOTES_EFICACIA,
                            categorias=CATEGORIAS_6M, situacoes=SITUACOES, tipos_porque=TIPOS_PORQUE,
                            tipos_acao=TIPOS_ACAO, status_acao=STATUS_ACAO, tipos_custo=TIPOS_CUSTO,
                            hoje=datetime.now().date())

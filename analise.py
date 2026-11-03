@@ -5,7 +5,7 @@ from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, abort
 
 from models import db, Reclamacao, Cliente, CausaIshikawa, Porque, Acao, CATEGORIAS_6M
-from servicos import write_lock, registrar, converter
+from servicos import write_lock, registrar, converter, buscar_recorrencias
 
 bp = Blueprint("ana", __name__)
 
@@ -207,6 +207,57 @@ def fechar(rid):
         registrar(rec.id, "8D FECHADO")
         db.session.commit()
     flash(f"{rec.codigo} fechada.", "ok")
+    return _voltar(rec, "D8")
+
+
+# ---------------- Eficácia pelo faturamento (D8) ----------------
+LOTES_EFICACIA = 3
+
+
+def eficacia(rec, cfg=None):
+    """Lotes (NFs) da peça faturados depois da conclusão da última ação e reclamações novas da mesma
+    peça desde então. None se ainda não há ação ou se alguma está em aberto."""
+    import fontes
+    from flask import current_app
+    if not rec.acoes:
+        return None
+    abertas = [a for a in rec.acoes if a.status != "CONCLUIDA"]
+    if abertas:
+        return {"aguardando": len(abertas)}
+    base = max(a.concluida_em for a in rec.acoes if a.concluida_em)
+    r = {"base": base, "nfs": [], "erro": None}
+    try:
+        cfg = cfg or fontes.carregar_config(current_app.instance_path)
+        r["nfs"] = [(d, nf, q) for d, nf, q in fontes.nfs_da_peca(rec.part_number, cfg) if d > base.date()]
+    except Exception as e:
+        r["erro"] = f"Não consegui ler a planilha de faturamento: {e}"
+    novas = [x for x in Reclamacao.query.filter(Reclamacao.part_number == rec.part_number,
+                                                Reclamacao.id != rec.id,
+                                                Reclamacao.data_recebimento > base).all()]
+    r["mesmo_modo"] = [x for x in novas if x.modo_falha == rec.modo_falha]
+    r["outras"] = [x for x in novas if x.modo_falha != rec.modo_falha]
+    r["pecas"] = sum(q for _, _, q in r["nfs"])
+    r["pronta"] = not r["erro"] and len(r["nfs"]) >= LOTES_EFICACIA and not r["mesmo_modo"]
+    return r
+
+
+@bp.route("/<int:rid>/eficacia/aplicar", methods=["POST"])
+def eficacia_aplicar(rid):
+    rec, bloqueio = _rec_editavel(rid, "D8")
+    if bloqueio:
+        return bloqueio
+    ef = eficacia(rec)
+    if not ef or "nfs" not in ef or ef["erro"]:
+        flash("Não há lotes faturados para usar.", "erro")
+        return _voltar(rec, "D8")
+    n = len(ef["nfs"])
+    with write_lock:
+        registrar(rec.id, f"D8 · Lotes verificados após ações: {rec.d8_lotes_verificados or 0} → {n} "
+                          f"(NFs faturadas desde {ef['base']:%d/%m/%Y}, {ef['pecas']} peças, "
+                          f"{len(ef['mesmo_modo'])} reclamação(ões) nova(s) do mesmo modo)")
+        rec.d8_lotes_verificados = n
+        db.session.commit()
+    flash(f"Lotes verificados preenchidos com {n}. Confirme \"Ações eficazes?\" abaixo.", "ok")
     return _voltar(rec, "D8")
 
 

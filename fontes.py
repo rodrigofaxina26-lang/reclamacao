@@ -7,6 +7,7 @@ Endereços ficam em instance/fontes.json (criado com os valores padrão na prime
 import json
 import os
 import re
+import threading
 import urllib.parse
 import urllib.request
 from datetime import date, timedelta
@@ -276,29 +277,47 @@ def planilha_nc(pn, cfg):
         return _resultado(nome, erro=str(e))
 
 
+_cache_fat = {"chave": None, "dados": {}}
+_trava_fat = threading.Lock()
+
+
+def nfs_da_peca(pn, cfg):
+    """[(data, nf, peças)] da peça, em ordem de data. A planilha (grande) é lida uma vez e
+    guardada em memória até o arquivo mudar."""
+    caminho = cfg["faturamento"]
+    with _trava_fat:
+        chave = (caminho, os.path.getmtime(caminho))
+        if _cache_fat["chave"] != chave:
+            import openpyxl
+            wb = openpyxl.load_workbook(caminho, read_only=True, data_only=True)
+            linhas = wb["REALIZADO PROTHEUS"].iter_rows(min_row=2, values_only=True)
+            cab = [str(c or "").strip() for c in next(linhas)]
+            i_cod, i_qtd, i_nf, i_data = (cab.index(c) for c in ("D2_COD", "D2_QUANT", "D2_DOC", "D2_EMISSAO"))
+            dados = {}
+            for l in linhas:
+                if not hasattr(l[i_data], "date"):
+                    continue
+                por_nf = dados.setdefault(str(l[i_cod] or "").strip().upper(), {})
+                k = (l[i_data].date(), str(l[i_nf]).strip())
+                por_nf[k] = por_nf.get(k, 0) + (l[i_qtd] or 0)
+            wb.close()
+            _cache_fat.update(chave=chave, dados=dados)
+        return sorted((d, nf, q) for (d, nf), q in _cache_fat["dados"].get(pn.upper(), {}).items())
+
+
 def faturamento(pn, cfg):
     """NFs da peça (aba REALIZADO PROTHEUS): data, NF e quantidade - sem preço/valor.
     Serve para ponto de corte (NF) e quantidade em trânsito/no cliente (D3)."""
     nome = "Faturamento (NFs emitidas)"
     try:
-        import openpyxl
-        wb = openpyxl.load_workbook(cfg["faturamento"], read_only=True, data_only=True)
-        linhas = wb["REALIZADO PROTHEUS"].iter_rows(min_row=2, values_only=True)
-        cab = [str(c or "").strip() for c in next(linhas)]
-        i_cod, i_qtd, i_nf, i_data = (cab.index(c) for c in ("D2_COD", "D2_QUANT", "D2_DOC", "D2_EMISSAO"))
-        inicio, alvo = _inicio(cfg), pn.upper()
+        inicio = _inicio(cfg)
         nfs, por_mes = {}, {}
-        for l in linhas:
-            if str(l[i_cod] or "").strip().upper() != alvo or not hasattr(l[i_data], "date"):
-                continue
-            dia = l[i_data].date()
+        for dia, nf, q in nfs_da_peca(pn, cfg):
             if dia < inicio:
                 continue
-            chave = (dia, str(l[i_nf]).strip())
-            nfs[chave] = nfs.get(chave, 0) + (l[i_qtd] or 0)
+            nfs[(dia, nf)] = q
             mes = dia.strftime("%m/%Y")
-            por_mes[mes] = por_mes.get(mes, 0) + (l[i_qtd] or 0)
-        wb.close()
+            por_mes[mes] = por_mes.get(mes, 0) + q
         regs = [{"tipo": "total faturado no período", "desde": inicio.strftime("%d/%m/%Y"),
                  "peças": sum(nfs.values()), "notas fiscais": len(nfs)}] if nfs else []
         regs += [{"tipo": "faturado no mês", "mês": m, "peças": q} for m, q in por_mes.items()]

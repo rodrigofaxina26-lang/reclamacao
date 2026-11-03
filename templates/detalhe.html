@@ -175,6 +175,39 @@
 {% endif %}
 
 {% if aba == 'D8' %}
+  <section class="caixa eficacia" style="margin-bottom:16px">
+    <h3 style="margin-top:0">Eficácia pelo faturamento</h3>
+    {% if not ef %}<p class="vazio">Cadastre e conclua as ações (D5/D6) para acompanhar os lotes faturados depois delas.</p>
+    {% elif ef.aguardando %}<p>Aguardando conclusão de {{ ef.aguardando }} ação(ões) na aba D6. A contagem de lotes começa
+      depois da última ação concluída.</p>
+    {% else %}
+      <p>Desde a conclusão da última ação (<strong>{{ ef.base|dt }}</strong>):</p>
+      {% if ef.erro %}<p class="msg msg-erro">{{ ef.erro }}</p>
+      {% else %}
+      <ul>
+        <li><strong>{{ ef.nfs|length }}</strong> lote(s)/NF(s) da peça {{ rec.part_number }} faturados, {{ ef.pecas }} peças.</li>
+        <li>{% if ef.mesmo_modo %}<span class="sem sem-vermelho">{{ ef.mesmo_modo|length }} reclamação(ões) nova(s) do mesmo modo de falha</span>:
+          {% for x in ef.mesmo_modo %}<a href="{{ url_for('rec.detalhe', rid=x.id) }}">{{ x.codigo }}</a> ({{ x.data_recebimento|dt }}){{ ', ' if not loop.last }}{% endfor %}
+          - as ações <strong>não</strong> foram eficazes.
+          {% else %}<span class="sem sem-verde">nenhuma reclamação nova do mesmo modo de falha</span>{% endif %}</li>
+        {% if ef.outras %}<li>Outras reclamações da peça (outro modo de falha):
+          {% for x in ef.outras %}<a href="{{ url_for('rec.detalhe', rid=x.id) }}">{{ x.codigo }}</a> · {{ x.modo_falha }}{{ ', ' if not loop.last }}{% endfor %}</li>{% endif %}
+      </ul>
+      {% if ef.pronta %}<p class="msg msg-ok">✔ Já saíram {{ ef.nfs|length }} lotes sem nova reclamação: pode verificar a eficácia.</p>
+      {% elif not ef.mesmo_modo %}<p class="legenda">Faltam {{ lotes_eficacia - ef.nfs|length }} lote(s) para o mínimo de {{ lotes_eficacia }}.</p>{% endif %}
+      {% if ef.nfs %}
+      <details><summary>Ver as NFs</summary>
+        <table class="tabela"><thead><tr><th>Data</th><th>NF</th><th>Peças</th></tr></thead><tbody>
+        {% for d, nf, q in ef.nfs %}<tr><td>{{ d.strftime('%d/%m/%Y') }}</td><td>{{ nf }}</td><td>{{ q }}</td></tr>{% endfor %}
+        </tbody></table></details>
+      {% if not fechada and ef.nfs|length != (rec.d8_lotes_verificados or 0) %}
+      <form method="post" action="{{ url_for('ana.eficacia_aplicar', rid=rec.id) }}" class="linha">
+        <button>Preencher "Lotes verificados" com {{ ef.nfs|length }}</button>
+        <span class="legenda">Hoje está {{ rec.d8_lotes_verificados or 0 }}. Cada NF conta como um lote.</span></form>
+      {% endif %}{% endif %}
+      {% endif %}
+    {% endif %}
+  </section>
   {% set pend = rec.pendencias_para_fechar() %}
   <h3>Pendências para fechar o 8D</h3>
   {% if pend %}<ul class="pendencias">{% for p in pend %}<li>{{ p }}</li>{% endfor %}</ul>
