@@ -127,5 +127,34 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <ul>{% for d in resultado.dados_faltando %}<li>{{ d }}</li>{% endfor %}</ul>
   {% endif %}
 </section>
+
+<section class="caixa" id="conversa" style="margin-top:16px">
+  <h3 style="margin-top:0">4. Conversar sobre as sugestões</h3>
+  <p class="legenda">Discorde, traga informação nova ou peça para detalhar ("a causa 2 não procede porque a matriz foi
+    trocada em setembro", "explique melhor o porquê 3"). O assistente responde com base em tudo o que já recebeu.
+    Os PDFs não são reenviados na conversa; só no "Refazer".</p>
+  {% for m in conversa %}
+    {% if m.papel == 'aviso' %}<p class="conversa-aviso">— {{ m.texto }} —</p>
+    {% else %}
+    <div class="balao balao-{{ m.papel }}">
+      <div class="legenda">{{ m.por if m.papel == 'analista' else 'Assistente (' ~ m.modelo ~ ')' }} · {{ m.quando[:16].replace('T', ' ') }}</div>
+      <div class="balao-texto">{{ m.texto }}</div>
+    </div>
+    {% endif %}
+  {% endfor %}
+  <form method="post" action="{{ url_for('ia.conversar', rid=rec.id) }}">
+    <textarea name="mensagem" rows="3" style="width:100%" placeholder="Escreva aqui a sua resposta ao assistente..." required>{{ rascunho }}</textarea>
+    <div class="linha"><button type="submit"
+      onclick="if(!this.form.reportValidity())return false; this.textContent='Aguardando resposta...'; this.form.submit(); this.disabled=true; return false;">Enviar</button></div>
+  </form>
+  {% if conversa|selectattr('papel', 'equalto', 'analista')|list %}
+  <form method="post" action="{{ url_for('ia.refazer', rid=rec.id) }}" class="linha">
+    <button type="submit" class="secundario"
+      onclick="if(!confirm('Gerar uma lista nova de sugestões levando em conta a conversa? A lista atual será substituída.'))return false; this.textContent='Refazendo... (pode levar alguns minutos)'; this.form.submit(); this.disabled=true; return false;">
+      Refazer as sugestões considerando a conversa</button>
+    <span class="legenda">Gera de novo causas, porquês e ações. O que já foi incluído no 8D não é alterado.</span>
+  </form>
+  {% endif %}
+</section>
 {% endif %}
 {% endblock %}

@@ -187,7 +187,8 @@ class ErroIA(Exception):
     pass
 
 
-def _chamar_gemini(cfg, chave, anexos, texto):
+def _chamar_gemini(cfg, chave, anexos, texto, instrucoes=INSTRUCOES, esquema=ESQUEMA):
+    """esquema=None: resposta em texto livre (conversa)."""
     from google import genai
     from google.genai import errors, types
 
@@ -202,9 +203,9 @@ def _chamar_gemini(cfg, chave, anexos, texto):
         try:
             resp = cliente.models.generate_content(
                 model=modelo, contents=partes,
-                config=types.GenerateContentConfig(system_instruction=INSTRUCOES,
-                                                   response_mime_type="application/json",
-                                                   response_json_schema=ESQUEMA))
+                config=types.GenerateContentConfig(
+                    system_instruction=instrucoes,
+                    **({"response_mime_type": "application/json", "response_json_schema": esquema} if esquema else {})))
             break
         except errors.ClientError as e:
             if e.code == 429:
@@ -226,7 +227,7 @@ def _chamar_gemini(cfg, chave, anexos, texto):
                                "saida": u.candidates_token_count if u else None}
 
 
-def _chamar_claude(cfg, chave, anexos, texto):
+def _chamar_claude(cfg, chave, anexos, texto, instrucoes=INSTRUCOES, esquema=ESQUEMA):
     import anthropic
 
     conteudo = [{"type": "document" if tipo == "application/pdf" else "image",
@@ -235,8 +236,8 @@ def _chamar_claude(cfg, chave, anexos, texto):
     conteudo.append({"type": "text", "text": texto})
     try:
         resp = anthropic.Anthropic(api_key=chave).beta.messages.create(
-            model=cfg["modelo"], max_tokens=16000, system=INSTRUCOES,
-            output_config={"effort": "high", "format": {"type": "json_schema", "schema": ESQUEMA}},
+            model=cfg["modelo"], max_tokens=16000, system=instrucoes,
+            output_config={"effort": "high", **({"format": {"type": "json_schema", "schema": esquema}} if esquema else {})},
             betas=["server-side-fallback-2026-07-01"], fallbacks="default",
             messages=[{"role": "user", "content": conteudo}])
     except anthropic.AuthenticationError:
@@ -333,6 +334,7 @@ def tela(rid):
     texto = _montar_texto(rec, pacote) if pacote else ""
     cfg = _config()
     return render_template("assistente.html", rec=rec, pacote=pacote, texto=texto, resultado=resultado,
+                           conversa=_ler(rid, "conversa.json") or [], rascunho=session.pop("rascunho_conversa", ""),
                            tem_chave=bool(_chave_api(cfg)), cfg=cfg, arq_chave=ARQ_CHAVE.get(cfg["provedor"]),
                            ext=", ".join(sorted(EXT_EMAIL)),
                            tipos_porque=TIPOS_PORQUE, campos_d2=CAMPOS_D2, hoje=datetime.now().date())
@@ -379,31 +381,52 @@ def coletar(rid):
     return redirect(url_for("ia.tela", rid=rid) + "#envio")
 
 
-@bp.route("/<int:rid>/assistente/enviar", methods=["POST"])
-def enviar(rid):
-    rec = db.get_or_404(Reclamacao, rid)
-    pacote = _ler(rid, "pacote.json")
+INSTRUCOES_CONVERSA = """Você é o mesmo assistente de análise de reclamações (8D) da Pro-Metal que gerou as
+sugestões mostradas abaixo. O analista de qualidade está respondendo às suas sugestões.
+- Responda em português, direto e curto (até umas 15 linhas), como um colega de qualidade experiente.
+- Baseie-se nos dados coletados e nas suas sugestões; cite datas e registros quando ajudar.
+- Se o analista trouxer informação nova (ex.: "já trocamos a matriz", "a bobina foi testada"), reavalie
+  as causas e ações à luz disso e diga claramente o que muda.
+- Se ele discordar, analise o argumento com honestidade: concorde quando ele tiver razão, explique quando
+  os dados apontarem outra coisa. Não invente dados que não estão no material.
+- Se a conversa mudar bastante as sugestões, lembre que ele pode clicar em "Refazer as sugestões
+  considerando a conversa" para gerar a lista nova (causas, porquês e ações) já ajustada.
+- Escreva em texto simples, sem markdown (sem **, # ou tabelas)."""
+
+
+def _conversa_texto(conversa):
+    return "\n\n".join(f"{'ANALISTA' if m['papel'] == 'analista' else 'ASSISTENTE'} "
+                       f"({m['quando'][:16].replace('T', ' ')}): {m['texto']}"
+                       for m in conversa if m["papel"] in ("analista", "ia"))
+
+
+def _sugestoes_texto(resultado):
+    """Só o conteúdo das sugestões, sem os dados internos (aceitas, tokens...)."""
+    return json.dumps({k: resultado.get(k) for k in ESQUEMA["properties"]},
+                      ensure_ascii=False, indent=1, default=str)
+
+
+def _gerar(rid, rec, pacote, marcados, conversa=None):
+    """Envia o pacote (e, ao refazer, a conversa) e grava o resultado. Devolve None ou a mensagem de erro."""
     cfg = _config()
-    chave = _chave_api(cfg)
-    if not pacote or not chave or cfg["provedor"] not in PROVEDORES:
-        flash("Colete os dados primeiro e confira se a chave da IA está instalada.", "erro")
-        return redirect(url_for("ia.tela", rid=rid))
     anexos = []
-    marcados = set(request.form.getlist("anexo"))
     for a in pacote["anexos"]:
-        if a["nome"] not in marcados:
-            continue
-        with open(os.path.join(_pasta(rid), a["nome"]), "rb") as f:
-            anexos.append((a["tipo"], f.read()))
+        if a["nome"] in marcados:
+            with open(os.path.join(_pasta(rid), a["nome"]), "rb") as f:
+                anexos.append((a["tipo"], f.read()))
+    texto = _montar_texto(rec, pacote)
+    if conversa:
+        texto += ("\n\n=== CONVERSA DO ANALISTA SOBRE AS SUGESTÕES ANTERIORES ===\n"
+                  "Gere as sugestões de novo levando em conta o que o analista disse abaixo (ele conhece o "
+                  "chão de fábrica e tem a palavra final; só descarte uma afirmação dele se os dados a "
+                  "contradisserem claramente, e diga por quê em leitura_historico).\n\n" + _conversa_texto(conversa))
     try:
-        texto, modelo, tokens = PROVEDORES[cfg["provedor"]](cfg, chave, anexos, _montar_texto(rec, pacote))
-        resultado = json.loads(texto)
+        resposta, modelo, tokens = PROVEDORES[cfg["provedor"]](cfg, _chave_api(cfg), anexos, texto)
+        resultado = json.loads(resposta)
     except ErroIA as e:
-        flash(str(e), "erro")
-        return redirect(url_for("ia.tela", rid=rid))
+        return str(e)
     except ValueError:
-        flash("A IA devolveu uma resposta fora do formato esperado. Tente de novo.", "erro")
-        return redirect(url_for("ia.tela", rid=rid))
+        return "A IA devolveu uma resposta fora do formato esperado. Tente de novo."
     # link só vale se veio de um registro coletado: a IA não pode inventar endereço
     links = {r.get("link") for f in pacote["fontes"] for r in f["registros"]}
     for e in resultado.get("evidencias", []):
@@ -411,11 +434,88 @@ def enviar(rid):
             e["link"] = ""
     resultado.get("evidencias", []).sort(key=lambda e: _data_ordem(e.get("data", "")))
     resultado.update(gerado_em=datetime.now(), por=session.get("usuario"), modelo=modelo,
-                     aceitas={"causas": [], "acoes": []}, tokens=tokens)
+                     aceitas={"causas": [], "acoes": []}, tokens=tokens, anexos_enviados=sorted(marcados),
+                     refeito=bool(conversa))
     _gravar(rid, "resultado.json", resultado)
+    return None
+
+
+def _pronto(rid):
+    pacote, cfg = _ler(rid, "pacote.json"), _config()
+    if not pacote or not _chave_api(cfg) or cfg["provedor"] not in PROVEDORES:
+        flash("Colete os dados primeiro e confira se a chave da IA está instalada.", "erro")
+        return None
+    return pacote
+
+
+@bp.route("/<int:rid>/assistente/enviar", methods=["POST"])
+def enviar(rid):
+    rec = db.get_or_404(Reclamacao, rid)
+    if not (pacote := _pronto(rid)):
+        return redirect(url_for("ia.tela", rid=rid))
+    if (erro := _gerar(rid, rec, pacote, set(request.form.getlist("anexo")))):
+        flash(erro, "erro")
+        return redirect(url_for("ia.tela", rid=rid))
+    _gravar(rid, "conversa.json", [])   # sugestões novas do zero: começa outra conversa
     with write_lock:
-        registrar(rid, f"Assistente · Dados enviados à IA ({modelo}); sugestões recebidas para revisão")
+        registrar(rid, f"Assistente · Dados enviados à IA ({_ler(rid, 'resultado.json')['modelo']}); "
+                       "sugestões recebidas para revisão")
         db.session.commit()
+    return redirect(url_for("ia.tela", rid=rid) + "#sugestoes")
+
+
+@bp.route("/<int:rid>/assistente/conversar", methods=["POST"])
+def conversar(rid):
+    rec = db.get_or_404(Reclamacao, rid)
+    msg = request.form.get("mensagem", "").strip()
+    if not (pacote := _pronto(rid)) or not (resultado := _ler(rid, "resultado.json")):
+        return redirect(url_for("ia.tela", rid=rid))
+    if not msg:
+        flash("Escreva a sua mensagem.", "erro")
+        return redirect(url_for("ia.tela", rid=rid) + "#conversa")
+    conversa = _ler(rid, "conversa.json") or []
+    conversa.append({"papel": "analista", "texto": msg[:4000], "quando": datetime.now().isoformat(),
+                     "por": session.get("nome") or session.get("usuario")})
+    texto = (_montar_texto(rec, pacote) + "\n\n=== SUAS SUGESTÕES (já mostradas ao analista) ===\n"
+             + _sugestoes_texto(resultado) + "\n\n=== CONVERSA ===\n" + _conversa_texto(conversa)
+             + "\n\nResponda à última mensagem do ANALISTA.")
+    cfg = _config()
+    try:
+        resposta, modelo, _ = PROVEDORES[cfg["provedor"]](cfg, _chave_api(cfg), [], texto,
+                                                          instrucoes=INSTRUCOES_CONVERSA, esquema=None)
+    except ErroIA as e:
+        flash(f"{e} A sua mensagem não foi perdida: está no campo abaixo.", "erro")
+        session["rascunho_conversa"] = msg
+        return redirect(url_for("ia.tela", rid=rid) + "#conversa")
+    conversa.append({"papel": "ia", "texto": resposta.strip(), "quando": datetime.now().isoformat(),
+                     "modelo": modelo})
+    _gravar(rid, "conversa.json", conversa)
+    with write_lock:
+        registrar(rid, f"Assistente · Conversa: {msg[:150]}")
+        db.session.commit()
+    return redirect(url_for("ia.tela", rid=rid) + "#conversa")
+
+
+@bp.route("/<int:rid>/assistente/refazer", methods=["POST"])
+def refazer(rid):
+    rec = db.get_or_404(Reclamacao, rid)
+    if not (pacote := _pronto(rid)) or not (resultado := _ler(rid, "resultado.json")):
+        return redirect(url_for("ia.tela", rid=rid))
+    conversa = _ler(rid, "conversa.json") or []
+    if not any(m["papel"] == "analista" for m in conversa):
+        flash("Converse com o assistente antes de refazer as sugestões.", "erro")
+        return redirect(url_for("ia.tela", rid=rid) + "#conversa")
+    if (erro := _gerar(rid, rec, pacote, set(resultado.get("anexos_enviados", [])), conversa)):
+        flash(erro, "erro")
+        return redirect(url_for("ia.tela", rid=rid) + "#conversa")
+    modelo = _ler(rid, "resultado.json")["modelo"]
+    conversa.append({"papel": "aviso", "texto": f"Sugestões refeitas considerando a conversa ({modelo}).",
+                     "quando": datetime.now().isoformat()})
+    _gravar(rid, "conversa.json", conversa)
+    with write_lock:
+        registrar(rid, f"Assistente · Sugestões refeitas considerando a conversa ({modelo})")
+        db.session.commit()
+    flash("Sugestões refeitas. As que você já tinha incluído no 8D continuam lá: confira para não duplicar.", "ok")
     return redirect(url_for("ia.tela", rid=rid) + "#sugestoes")
 
 
