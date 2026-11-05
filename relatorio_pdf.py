@@ -152,13 +152,16 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
         d4 += [_p("Ishikawa (6M)", TXT_B), Spacer(1, 1.5 * mm), _tabela(linhas, [24, 76, 22, 58])]
     for c in [c for c in rec.causas if c.situacao == "PROVAVEL"]:
         for tipo, nome in TIPOS_PORQUE.items():
-            cadeia = [p for p in rec.porques if p.causa_id == c.id and p.tipo == tipo
-                      and not (_vazio(p.pergunta) and _vazio(p.resposta))]
-            if cadeia:
-                linhas = [[_p("#", TXT_B), _p("Por quê?", TXT_B), _p("Resposta", TXT_B)]]
-                linhas += [[_p(p.ordem), _p(p.pergunta), _p(p.resposta)] for p in sorted(cadeia, key=lambda p: p.ordem or 0)]
-                d4.append(KeepTogether([Spacer(1, 3 * mm), _p(f"5 Porquês · {nome} · {c.descricao}", TXT_B),
-                                        Spacer(1, 1.5 * mm), _tabela(linhas, [8, 82, 90])]))
+            cadeia = sorted((p for p in rec.porques if p.causa_id == c.id and p.tipo == tipo and not _vazio(p.resposta)),
+                            key=lambda p: p.ordem or 0)
+            passos = [p for p in cadeia if p.ordem]
+            if passos:
+                inicio = next((p.resposta for p in cadeia if not p.ordem), c.descricao)
+                linhas = [[_p("Problema", TXT_B), _p(inicio, TXT_B)]]
+                linhas += [[_p(f"Por quê? {n}", TXT_B), _p(p.resposta)] for n, p in enumerate(passos, 1)]
+                t = _tabela(linhas, [28, 152], cabecalho=False)
+                t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), CINZA), ("BACKGROUND", (1, 0), (1, 0), CINZA)]))
+                d4.append(KeepTogether([Spacer(1, 3 * mm), _p(f"5 Porquês · {nome}", TXT_B), Spacer(1, 1.5 * mm), t]))
     t = _campos(rec, "D4", 55)
     if t:
         d4 += [Spacer(1, 3 * mm), t]

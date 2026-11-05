@@ -110,7 +110,7 @@ class Reclamacao(db.Model):
             p.append("Causa raiz sem comprovação")
         # cadeias só contam se ligadas a causa PROVAVEL e com ao menos uma resposta
         provaveis = {c.id for c in self.causas if c.situacao == "PROVAVEL"}
-        tipos_ok = {x.tipo for x in self.porques if x.causa_id in provaveis and x.resposta}
+        tipos_ok = {x.tipo for x in self.porques if x.causa_id in provaveis and x.resposta and x.ordem}
         if "OCORRENCIA" not in tipos_ok:
             p.append("5 Porquês de ocorrência ausente")
         if "NAO_DETECCAO" not in tipos_ok:

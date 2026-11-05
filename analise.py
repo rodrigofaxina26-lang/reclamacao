@@ -128,20 +128,19 @@ def porques_salvar(rid, cid, tipo):
     if c.situacao != "PROVAVEL":
         flash("5 Porquês só pode ser feito em causa PROVÁVEL.", "erro")
         return _voltar(rec, "D4", f"#causa-{c.id}")
-    novas = []
-    for n in range(1, 6):
-        p = request.form.get(f"pergunta{n}", "").strip()
-        r = request.form.get(f"resposta{n}", "").strip()
-        if p or r:
-            novas.append((p or f"Por que? ({n})", r))
+    # ordem 0 = o problema (ponto de partida); 1..5 = cada resposta a "por quê?" da linha de cima
+    inicio = request.form.get("inicio", "").strip()
+    novas = [r for n in range(1, 6) if (r := request.form.get(f"porque{n}", "").strip())]
     with write_lock:
         antigas = Porque.query.filter_by(reclamacao_id=rec.id, causa_id=c.id, tipo=tipo).all()
         for a in antigas:
             db.session.delete(a)
-        for ordem, (p, r) in enumerate(novas, 1):
+        if inicio:
+            db.session.add(Porque(reclamacao_id=rec.id, causa_id=c.id, tipo=tipo, ordem=0, resposta=inicio))
+        for ordem, r in enumerate(novas, 1):
             db.session.add(Porque(reclamacao_id=rec.id, causa_id=c.id, tipo=tipo, ordem=ordem,
-                                  pergunta=p, resposta=r or None))
-        resumo = " | ".join(f"{i}. {r or '?'}" for i, (_, r) in enumerate(novas, 1)) or "(removida)"
+                                  pergunta="Por quê?", resposta=r))
+        resumo = (f"{inicio} → " if inicio else "") + (" → ".join(novas) or "(sem porquês)")
         registrar(rec.id, f"D4 · 5 Porquês {TIPOS_PORQUE[tipo]} da causa '{c.descricao[:50]}': {resumo}")
         db.session.commit()
     flash(f"5 Porquês de {TIPOS_PORQUE[tipo].lower()} salvo.", "ok")

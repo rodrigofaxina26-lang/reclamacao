@@ -37,6 +37,13 @@ def _migrar():
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(causa_ishikawa)"))}
     if "pernas" not in cols:
         db.session.execute(text("ALTER TABLE causa_ishikawa ADD COLUMN pernas VARCHAR(40)"))
+    # 5 Porquês viraram uma coluna só (resposta): quem preenchia a coluna da esquerda e punha "-" na
+    # resposta tem o texto movido para a resposta. Roda sempre, mas só pega linhas no formato antigo.
+    db.session.execute(text(
+        "UPDATE porque SET resposta = pergunta, pergunta = 'Por quê?' "
+        "WHERE (resposta IS NULL OR TRIM(resposta) IN ('', '-')) AND TRIM(COALESCE(pergunta, '')) NOT IN ('', '-', 'Por quê?') "
+        "AND pergunta NOT LIKE 'Por que? (%'"))
+    db.session.execute(text("DELETE FROM porque WHERE resposta IS NULL OR TRIM(resposta) IN ('', '-')"))
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(usuario)"))}
     if "admin" not in cols:
         db.session.execute(text("ALTER TABLE usuario ADD COLUMN admin BOOLEAN DEFAULT 0"))

@@ -64,7 +64,7 @@
       <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
       <strong>Esta causa explica:</strong>
       {% for t, tnome in tipos_porque.items() %}
-      {% set tem = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|selectattr('pergunta')|list %}
+      {% set tem = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|selectattr('resposta')|list %}
       <label class="check"><input type="checkbox" name="perna" value="{{ t }}" {{ 'checked' if t in pernas }}
         onchange="if(!this.checked && {{ 'true' if tem else 'false' }} && !confirm('Desmarcar apaga os 5 Porquês de {{ tnome }} desta causa. Continuar?')){this.checked=true;return;} this.form.submit()">
         {{ tnome }}</label>
@@ -76,16 +76,21 @@
     {% for t, tnome in tipos_porque.items() if t in pernas %}
       {% set cadeia = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|list %}
       <details open>
-        <summary>5 Porquês - {{ tnome }} {{ '✔' if cadeia|selectattr('resposta')|list }}</summary>
+        {% set inicio = cadeia|selectattr('ordem', 'equalto', 0)|first %}
+        {% set passos = cadeia|rejectattr('ordem', 'equalto', 0)|list %}
+        <summary>5 Porquês - {{ tnome }} {{ '✔' if passos|selectattr('resposta')|list }}</summary>
         <form method="post" action="{{ url_for('ana.porques_salvar', rid=rec.id, cid=c.id, tipo=t) }}">
         <fieldset {{ 'disabled' if fechada }}>
-        <table class="tabela"><thead><tr><th>#</th><th>Por quê?</th><th>Resposta</th></tr></thead><tbody>
-        {% for n in range(1, 6) %}{% set p = cadeia[n - 1] if cadeia|length >= n else none %}
-        <tr><td>{{ n }}</td>
-          <td><input name="pergunta{{ n }}" value="{{ p.pergunta if p else '' }}" placeholder="{{ 'Por que ' ~ ('ocorreu' if t == 'OCORRENCIA' else 'não foi detectado') ~ '?' if n == 1 else 'Por quê?' }}" style="width:100%"></td>
-          <td><input name="resposta{{ n }}" value="{{ (p.resposta or '') if p else '' }}" style="width:100%"></td></tr>
+        <table class="tabela cinco-porques"><tbody>
+        <tr class="inicio"><th>{{ 'Problema' if t == 'OCORRENCIA' else 'Problema (não detectado)' }}</th>
+          <td><input name="inicio" value="{{ inicio.resposta if inicio else c.descricao }}" style="width:100%"></td></tr>
+        {% for n in range(1, 6) %}{% set p = passos[n - 1] if passos|length >= n else none %}
+        <tr><th>Por quê? {{ n }}</th>
+          <td><input name="porque{{ n }}" value="{{ (p.resposta or '') if p else '' }}" style="width:100%"
+            placeholder="{{ 'Por que ' ~ ('ocorreu' if t == 'OCORRENCIA' else 'não foi detectado') ~ '?' if n == 1 else 'Por que a linha de cima aconteceu?' }}"></td></tr>
         {% endfor %}
         </tbody></table>
+        <p class="legenda">Cada linha responde "por quê?" da linha de cima. Pode parar antes do 5º quando chegar na causa raiz.</p>
         <button>Salvar 5 Porquês ({{ tnome }})</button>
         </fieldset>
         </form>
