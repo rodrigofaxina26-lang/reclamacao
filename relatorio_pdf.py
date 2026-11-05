@@ -1,12 +1,11 @@
-"""Relatório 8D em PDF (reportlab). Leva só o conteúdo do 8D: custos e histórico de alterações
-ficam de fora (são internos e o PDF pode ir para o cliente)."""
+"""Relatório 8D em PDF (reportlab). Mostra só o que foi preenchido: seção ou campo vazio não aparece.
+Custos e histórico de alterações ficam de fora (são internos e o PDF pode ir para o cliente)."""
 import io
 import os
 from datetime import datetime
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
@@ -26,23 +25,29 @@ TXT_B = ParagraphStyle("txtb", parent=TXT, fontName="Helvetica-Bold")
 TIT = ParagraphStyle("tit", parent=TXT, fontName="Helvetica-Bold", fontSize=15, leading=18, textColor=AZUL)
 SEC = ParagraphStyle("sec", parent=TXT, fontName="Helvetica-Bold", fontSize=11, leading=14, textColor=colors.white)
 PEQ = ParagraphStyle("peq", parent=TXT, fontSize=7.5, leading=9, textColor=colors.grey)
-DIR = ParagraphStyle("dir", parent=PEQ, alignment=TA_RIGHT)
+
+
+def _vazio(v):
+    return v is None or (isinstance(v, str) and not v.strip())
 
 
 def _p(v, estilo=TXT):
-    """Texto seguro para o Paragraph (escapa < > & e mantém as quebras de linha)."""
-    return Paragraph(escape(str(v)).replace("\n", "<br/>") if v not in (None, "") else "-", estilo)
+    """Texto seguro para o Paragraph (escapa < > & e mantém as quebras de linha). Vazio fica em branco."""
+    return Paragraph("" if _vazio(v) else escape(str(v)).replace("\n", "<br/>"), estilo)
 
 
 def _valor(rec, campo, tipo):
+    """Valor para o relatório, ou None quando o campo não foi preenchido."""
     v = getattr(rec, campo)
     if tipo == "datetime":
-        return v.strftime("%d/%m/%Y %H:%M") if v else ""
+        return v.strftime("%d/%m/%Y %H:%M") if v else None
     if tipo == "bool":
-        return "Sim" if v else "Não"
+        return "Sim" if v else None          # caixa desmarcada = não preenchido
     if tipo == "tri":
-        return {True: "Sim", False: "Não"}.get(v, "Não avaliado")
-    return v
+        return {True: "Sim", False: "Não"}.get(v)
+    if tipo == "int0":
+        return v or None
+    return None if _vazio(v) else v
 
 
 def _secao(titulo):
@@ -65,7 +70,14 @@ def _tabela(linhas, larguras, cabecalho=True):
 
 
 def _campos(rec, aba, largura_rotulo=60):
-    linhas = [[_p(rotulo, TXT_B), _p(_valor(rec, campo, tipo))] for campo, rotulo, tipo in CAMPOS[aba]]
+    """Tabela rótulo/valor só com os campos preenchidos; None se nenhum foi."""
+    linhas = []
+    for campo, rotulo, tipo in CAMPOS[aba]:
+        v = _valor(rec, campo, tipo)
+        if v is not None:
+            linhas.append([_p(rotulo, TXT_B), _p(v)])
+    if not linhas:
+        return None
     t = _tabela(linhas, [largura_rotulo, 180 - largura_rotulo], cabecalho=False)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), CINZA)]))
     return t
@@ -95,66 +107,82 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
                              ("LINEBELOW", (0, 0), (-1, 0), 1.2, AZUL), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     e += [cab, Spacer(1, 4 * mm)]
 
-    resumo = [[_p("Cliente", TXT_B), _p(rec.cliente.nome), _p("Status", TXT_B), _p(rec.status)],
-              [_p("Part number", TXT_B), _p(rec.part_number), _p("Nº no cliente", TXT_B), _p(rec.num_reclamacao_cliente)],
-              [_p("Modo de falha", TXT_B), _p(rec.modo_falha), _p("Lote", TXT_B), _p(rec.lote)],
-              [_p("Recebida em", TXT_B), _p(f"{rec.data_recebimento:%d/%m/%Y %H:%M}"),
-               _p("Qtd. suspeita", TXT_B), _p(rec.qtd_suspeita)]]
-    if rec.fechada_em:
-        resumo.append([_p("Fechada em", TXT_B), _p(f"{rec.fechada_em:%d/%m/%Y %H:%M}"), _p(""), _p("")])
+    # resumo: só os pares preenchidos, dois por linha
+    pares = [(r, v) for r, v in (
+        ("Cliente", rec.cliente.nome), ("Status", rec.status), ("Part number", rec.part_number),
+        ("Nº no cliente", rec.num_reclamacao_cliente), ("Modo de falha", rec.modo_falha), ("Lote", rec.lote),
+        ("Recebida em", f"{rec.data_recebimento:%d/%m/%Y %H:%M}" if rec.data_recebimento else None),
+        ("Qtd. suspeita", rec.qtd_suspeita),
+        ("Fechada em", f"{rec.fechada_em:%d/%m/%Y %H:%M}" if rec.fechada_em else None)) if not _vazio(v)]
+    resumo = []
+    for n in range(0, len(pares), 2):
+        par = pares[n:n + 2] + [("", None)] * (2 - len(pares[n:n + 2]))
+        resumo.append([_p(par[0][0], TXT_B), _p(par[0][1]), _p(par[1][0], TXT_B), _p(par[1][1])])
     t = _tabela(resumo, [32, 58, 32, 58], cabecalho=False)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), CINZA), ("BACKGROUND", (2, 0), (2, -1), CINZA)]))
     e.append(t)
 
-    e += _secao("D1 · Equipe")
     if rec.equipe:
+        e += _secao("D1 · Equipe")
         e.append(_tabela([[_p("Nome", TXT_B), _p("Função", TXT_B), _p("Líder", TXT_B)]] +
                          [[_p(m.nome), _p(m.funcao), _p("Sim" if m.lider else "")] for m in rec.equipe], [80, 75, 25]))
-    else:
-        e.append(_p("Equipe não cadastrada."))
 
-    e += _secao("D2 · Descrição do problema (5W2H)")
-    e.append(_campos(rec, "D2", 45))
+    t = _campos(rec, "D2", 45)
+    if t:
+        e += _secao("D2 · Descrição do problema (5W2H)")
+        e.append(t)
 
-    e += _secao("D3 · Contenção")
-    d3 = [[_p("Local", TXT_B), _p("Qtd. verificada", TXT_B), _p("NOK", TXT_B)]]
+    d3 = []
     for nome, pref in (("Estoque Pro-Metal", "d3_estoque"), ("Em trânsito", "d3_transito"), ("No cliente", "d3_cliente")):
-        d3.append([_p(nome), _p(getattr(rec, pref + "_qtd")), _p(getattr(rec, pref + "_nok"))])
-    e.append(_tabela(d3, [80, 50, 50]))
-    e += [Spacer(1, 2 * mm), _p(f"Contenção concluída em: {_valor(rec, 'd3_concluida_em', 'datetime') or '-'}")]
+        qtd, nok = getattr(rec, pref + "_qtd"), getattr(rec, pref + "_nok")
+        if qtd is not None or nok is not None:
+            d3.append([_p(nome), _p(qtd), _p(nok)])
+    if d3 or rec.d3_concluida_em:
+        e += _secao("D3 · Contenção")
+        if d3:
+            e.append(_tabela([[_p("Local", TXT_B), _p("Qtd. verificada", TXT_B), _p("NOK", TXT_B)]] + d3, [80, 50, 50]))
+        if rec.d3_concluida_em:
+            e += [Spacer(1, 2 * mm), _p(f"Contenção concluída em: {rec.d3_concluida_em:%d/%m/%Y %H:%M}")]
 
-    e += _secao("D4 · Análise de causa raiz")
+    d4 = []
     if rec.causas:
         linhas = [[_p("6M", TXT_B), _p("Causa", TXT_B), _p("Situação", TXT_B), _p("Evidência", TXT_B)]]
         for c in sorted(rec.causas, key=lambda c: (c.categoria or "", c.id)):
             linhas.append([_p(c.categoria), _p(c.descricao), _p(SITUACAO.get(c.situacao, c.situacao)), _p(c.evidencia)])
-        e += [_p("Ishikawa (6M)", TXT_B), Spacer(1, 1.5 * mm), _tabela(linhas, [24, 76, 22, 58])]
+        d4 += [_p("Ishikawa (6M)", TXT_B), Spacer(1, 1.5 * mm), _tabela(linhas, [24, 76, 22, 58])]
     for c in [c for c in rec.causas if c.situacao == "PROVAVEL"]:
         for tipo, nome in TIPOS_PORQUE.items():
-            cadeia = [p for p in rec.porques if p.causa_id == c.id and p.tipo == tipo and (p.pergunta or p.resposta)]
+            cadeia = [p for p in rec.porques if p.causa_id == c.id and p.tipo == tipo
+                      and not (_vazio(p.pergunta) and _vazio(p.resposta))]
             if cadeia:
                 linhas = [[_p("#", TXT_B), _p("Por quê?", TXT_B), _p("Resposta", TXT_B)]]
                 linhas += [[_p(p.ordem), _p(p.pergunta), _p(p.resposta)] for p in sorted(cadeia, key=lambda p: p.ordem or 0)]
-                e.append(KeepTogether([Spacer(1, 3 * mm), _p(f"5 Porquês · {nome} · {c.descricao}", TXT_B),
-                                       Spacer(1, 1.5 * mm), _tabela(linhas, [8, 82, 90])]))
-    e += [Spacer(1, 3 * mm), _campos(rec, "D4", 55)]
+                d4.append(KeepTogether([Spacer(1, 3 * mm), _p(f"5 Porquês · {nome} · {c.descricao}", TXT_B),
+                                        Spacer(1, 1.5 * mm), _tabela(linhas, [8, 82, 90])]))
+    t = _campos(rec, "D4", 55)
+    if t:
+        d4 += [Spacer(1, 3 * mm), t]
+    if d4:
+        e += _secao("D4 · Análise de causa raiz") + d4
 
-    e += _secao("D5/D6 · Ações corretivas e implementação")
     if rec.acoes:
+        e += _secao("D5/D6 · Ações corretivas e implementação")
         linhas = [[_p(h, TXT_B) for h in ("Tipo", "Foco", "Ação", "Responsável", "Prazo", "Status / concluída")]]
         for a in sorted(rec.acoes, key=lambda a: (a.prazo or datetime.max.date())):
             concl = a.status + (f"\n{a.concluida_em:%d/%m/%Y}" if a.concluida_em else "")
             linhas.append([_p(a.tipo), _p(TIPOS_PORQUE.get(a.foco, a.foco)), _p(a.descricao), _p(a.responsavel),
-                           _p(a.prazo.strftime("%d/%m/%Y") if a.prazo else ""), _p(concl)])
+                           _p(a.prazo.strftime("%d/%m/%Y") if a.prazo else None), _p(concl)])
         e.append(_tabela(linhas, [25, 21, 55, 26, 21, 32]))
-    else:
-        e.append(_p("Nenhuma ação cadastrada."))
 
-    e += _secao("D7 · Prevenção")
-    e.append(_campos(rec, "D7", 60))
+    t = _campos(rec, "D7", 60)
+    if t:
+        e += _secao("D7 · Prevenção")
+        e.append(t)
 
-    e += _secao("D8 · Verificação de eficácia e encerramento")
-    e.append(_campos(rec, "D8", 60))
+    t = _campos(rec, "D8", 60)
+    if t:
+        e += _secao("D8 · Verificação de eficácia e encerramento")
+        e.append(t)
 
     if evidencias:
         e += _secao("Evidências anexadas")
