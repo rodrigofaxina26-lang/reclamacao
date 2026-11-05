@@ -271,6 +271,18 @@ def evidencia_excluir(eid):
     return _voltar(rec, ev.etapa)
 
 
+# ---------------- relatório PDF ----------------
+@bp.route("/<int:rid>/pdf")
+def relatorio_pdf(rid):
+    import relatorio_pdf as rp
+    rec = _obter(rid)
+    evs = Evidencia.query.filter_by(reclamacao_id=rid).order_by(Evidencia.etapa, Evidencia.id).all()
+    pdf = rp.gerar(rec, evs, current_app.static_folder, session.get("nome") or session.get("usuario"))
+    resp = current_app.response_class(pdf, mimetype="application/pdf")
+    resp.headers["Content-Disposition"] = f'inline; filename="8D_{rec.codigo}_{rec.part_number}.pdf"'
+    return resp
+
+
 # ---------------- custos ----------------
 def _valor_reais(txt):
     """Aceita 1.234,56 / 1234,56 / 1234.56."""

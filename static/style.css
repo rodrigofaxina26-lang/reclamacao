@@ -84,3 +84,6 @@ tr.minha td { background: #fff7e6; }
 .balao-texto { white-space: pre-wrap; }
 .conversa-aviso { text-align: center; color: #666; font-size: 13px; }
 button.secundario { background: #fff; color: #1f3a5f; border: 1px solid #1f3a5f; }
+
+a.botao { display: inline-block; background: #1f3a5f; color: #fff; padding: 7px 14px; border-radius: 4px; text-decoration: none; }
+a.botao:hover { background: #2b4f7f; }
