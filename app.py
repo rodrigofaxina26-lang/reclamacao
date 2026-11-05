@@ -34,6 +34,9 @@ def _criar_triggers():
 
 def _migrar():
     """Colunas novas em bancos já existentes (create_all não altera tabela)."""
+    cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(causa_ishikawa)"))}
+    if "pernas" not in cols:
+        db.session.execute(text("ALTER TABLE causa_ishikawa ADD COLUMN pernas VARCHAR(40)"))
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(usuario)"))}
     if "admin" not in cols:
         db.session.execute(text("ALTER TABLE usuario ADD COLUMN admin BOOLEAN DEFAULT 0"))

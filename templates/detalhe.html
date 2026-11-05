@@ -59,10 +59,23 @@
       </fieldset>
     </form>
     {% if c.situacao == 'PROVAVEL' %}
+    {% set pernas = c.pernas_ativas(rec.porques) %}
+    <form method="post" action="{{ url_for('ana.causa_pernas', rid=rec.id, cid=c.id) }}" class="linha pernas">
+      <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
+      <strong>Esta causa explica:</strong>
+      {% for t, tnome in tipos_porque.items() %}
+      {% set tem = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|selectattr('pergunta')|list %}
+      <label class="check"><input type="checkbox" name="perna" value="{{ t }}" {{ 'checked' if t in pernas }}
+        onchange="if(!this.checked && {{ 'true' if tem else 'false' }} && !confirm('Desmarcar apaga os 5 Porquês de {{ tnome }} desta causa. Continuar?')){this.checked=true;return;} this.form.submit()">
+        {{ tnome }}</label>
+      {% endfor %}
+      {% if not pernas %}<span class="legenda">Marque a(s) perna(s) para abrir os 5 Porquês.</span>{% endif %}
+      </fieldset>
+    </form>
     <div class="porques">
-    {% for t, tnome in tipos_porque.items() %}
+    {% for t, tnome in tipos_porque.items() if t in pernas %}
       {% set cadeia = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|list %}
-      <details {{ 'open' if cadeia }}>
+      <details open>
         <summary>5 Porquês - {{ tnome }} {{ '✔' if cadeia|selectattr('resposta')|list }}</summary>
         <form method="post" action="{{ url_for('ana.porques_salvar', rid=rec.id, cid=c.id, tipo=t) }}">
         <fieldset {{ 'disabled' if fechada }}>

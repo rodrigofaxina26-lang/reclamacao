@@ -154,6 +154,13 @@ class CausaIshikawa(db.Model):  # D4
     descricao = db.Column(db.Text, nullable=False)
     situacao = db.Column(db.String(12), default="EM_ANALISE")             # PROVAVEL / DESCARTADA
     evidencia = db.Column(db.Text)
+    pernas = db.Column(db.String(40))   # "OCORRENCIA,NAO_DETECCAO": quais 5 Porquês esta causa usa
+
+    def pernas_ativas(self, porques):
+        """As escolhidas; sem escolha ainda (causas antigas), as que já têm porquês preenchidos."""
+        if self.pernas is not None:
+            return [p for p in self.pernas.split(",") if p]
+        return sorted({p.tipo for p in porques if p.causa_id == self.id and (p.pergunta or p.resposta)})
 
 
 class Porque(db.Model):  # D4 - cadeia ligada à causa do Ishikawa

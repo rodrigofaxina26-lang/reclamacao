@@ -82,6 +82,26 @@ def causa_salvar(rid, cid):
     return _voltar(rec, "D4", f"#causa-{c.id}")
 
 
+@bp.route("/<int:rid>/causas/<int:cid>/pernas", methods=["POST"])
+def causa_pernas(rid, cid):
+    """Quais 5 Porquês (ocorrência / não detecção) esta causa usa. Desmarcar apaga os porquês daquela perna."""
+    rec, bloqueio = _rec_editavel(rid, "D4")
+    if bloqueio:
+        return bloqueio
+    c = _filho(CausaIshikawa, cid, rec)
+    novas = [t for t in TIPOS_PORQUE if t in request.form.getlist("perna")]
+    antes = c.pernas_ativas(rec.porques)
+    with write_lock:
+        for t in set(antes) - set(novas):
+            Porque.query.filter_by(causa_id=c.id, tipo=t).delete()
+        c.pernas = ",".join(novas)
+        if novas != antes:
+            registrar(rec.id, f"D4 · Causa '{c.descricao[:60]}' explica: "
+                              + (" e ".join(TIPOS_PORQUE[t] for t in novas) or "(nenhuma perna)"))
+        db.session.commit()
+    return _voltar(rec, "D4", f"#causa-{c.id}")
+
+
 # ---------------- 5 Porquês ----------------
 @bp.route("/<int:rid>/causas/<int:cid>/excluir", methods=["POST"])
 def causa_excluir(rid, cid):
