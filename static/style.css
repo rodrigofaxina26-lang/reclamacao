@@ -89,3 +89,7 @@ a.botao { display: inline-block; background: #1f3a5f; color: #fff; padding: 7px 
 a.botao:hover { background: #2b4f7f; }
 .pernas { margin: 6px 0; }
 .cinco-porques th { width: 190px; text-align: left; white-space: nowrap; } .cinco-porques tr.inicio th, .cinco-porques tr.inicio input { font-weight: 600; }
+
+.nao-conferido { background: #fff4e5; border-left: 3px solid #d97706; padding: 3px 8px; margin: 4px 0; font-size: 13px; }
+.tag-hipotese { background: #fde8e8; color: #9b1c1c; }
+.tag-dado { background: #e6f4ea; color: #1e6b34; }

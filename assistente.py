@@ -31,16 +31,30 @@ MIDIA = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", "
 
 INSTRUCOES = """Você é um engenheiro de qualidade sênior de uma estamparia automotiva (Pro-Metal),
 ajudando a montar um 8D para uma reclamação de cliente. Responda em português do Brasil.
+Sua experiência: estampagem (ferramentas progressivas e de transferência, repuxo, dobra, corte),
+solda (MIG/MAG, projeção, ponto), aço para estampagem (LE, LR, alongamento, química) e as
+ferramentas da IATF 16949: 8D, PFMEA e plano de controle (AIAG-VDA), CEP e MSA. Escreva como
+engenheiro: frases objetivas, termos técnicos corretos, causa raiz descrita como falha de
+processo/sistema (o que falhou e por quê), nunca como culpa de pessoa.
 
 Você recebe: a reclamação cadastrada, o e-mail/anexo do cliente e o histórico interno da peça
 (cartões amarelo/vermelho, refugo por modo de falha e turno, alertas de qualidade, certificados
 da matéria-prima com CEP de ensaios mecânicos e química das bobinas, reclamações
 anteriores e ações já tomadas).
 
-Regras:
-- Baseie cada causa e ação nos dados recebidos e diga em "base" qual dado a sustenta. Se uma
-  hipótese não tiver dado que a apoie, diga que é hipótese a verificar.
-- Nunca invente números, datas, lotes ou registros que não estejam nos dados.
+Regras contra invenção (as mais importantes):
+- Use SOMENTE os dados recebidos. Todo número, data, NF, lote, código de peça, bobina, máquina,
+  turno ou código de reclamação que você escrever tem de estar copiado exatamente dos dados.
+  O sistema confere isso automaticamente e marca como "não encontrado" o que você inventar.
+- Em "base", comece pela fonte e pela data do registro (ex.: "Refugo, 29/09/2026: 8 pç
+  TRINCAS/ESTIRAMENTO na PR0056"). Se não houver registro que sustente a causa, escreva
+  "Hipótese a verificar - sem registro nos dados" e marque "sustentacao": "HIPOTESE".
+- Não generalize a partir de um registro só ("sempre", "frequentemente") e não deduza valores
+  que não vieram (não estime quantidades, porcentagens ou datas).
+- Se faltar um dado para concluir, diga o que falta em "dados_faltando" em vez de supor.
+- Prefira menos causas bem sustentadas a muitas causas soltas.
+
+Regras de análise:
 - Considere sempre as duas pernas: por que OCORREU e por que NÃO FOI DETECTADO.
 - Os "8Ds anteriores neste sistema" são a fonte mais confiável: causas já confirmadas e ações
   já testadas. Se um 8D anterior foi NÃO eficaz, não repita a mesma ação sem mudar a abordagem.
@@ -107,9 +121,11 @@ ESQUEMA = {
         "leitura_historico": _txt,
         "causas": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["categoria", "descricao", "base"],
+            "required": ["categoria", "descricao", "base", "sustentacao"],
             "properties": {"categoria": {"type": "string", "enum": CATEGORIAS_6M},
-                           "descricao": _txt, "base": _txt}}},
+                           "descricao": _txt, "base": _txt,
+                           # DADO = há registro que sustenta; HIPOTESE = só raciocínio técnico
+                           "sustentacao": {"type": "string", "enum": ["DADO", "HIPOTESE"]}}}},
         "porques_ocorrencia": {"type": "array", "items": _txt},
         "porques_nao_deteccao": {"type": "array", "items": _txt},
         "acoes": {"type": "array", "items": {
@@ -205,6 +221,7 @@ def _chamar_gemini(cfg, chave, anexos, texto, instrucoes=INSTRUCOES, esquema=ESQ
                 model=modelo, contents=partes,
                 config=types.GenerateContentConfig(
                     system_instruction=instrucoes,
+                    temperature=0.2 if esquema else 0.4,   # baixa: menos "criatividade", menos invenção
                     **({"response_mime_type": "application/json", "response_json_schema": esquema} if esquema else {})))
             break
         except errors.ClientError as e:
@@ -406,6 +423,45 @@ def _sugestoes_texto(resultado):
                       ensure_ascii=False, indent=1, default=str)
 
 
+# ---------------- conferência contra invenção ----------------
+_RE_DATA = re.compile(r"\b(\d{1,2})/(\d{1,2})/(\d{4})\b")
+_RE_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+# códigos com dígito e 6+ caracteres: NF, bobina, corrida, part number, máquina, RC-AAAA-NNNN
+_RE_COD = re.compile(r"\bRC-\d{4}-\d{4}\b|\b(?=[A-Z0-9]*\d)[A-Z0-9]{6,}\b")
+
+
+def _datas(txt):
+    return ({(int(d), int(m), int(a)) for d, m, a in _RE_DATA.findall(txt)}
+            | {(int(d), int(m), int(a)) for a, m, d in _RE_ISO.findall(txt)})
+
+
+def _conferir(resultado, fonte):
+    """Datas e códigos citados pela IA que NÃO aparecem nos dados enviados. Devolve
+    {"causas": {"0": ["12/03/2026"]}, ...}: só os itens com algo não encontrado."""
+    fonte_up = fonte.upper()
+    datas_ok = _datas(fonte)
+
+    def faltando(txt):
+        txt = txt or ""
+        fora = [f"{d:02d}/{m:02d}/{a}" for d, m, a in sorted(_datas(txt) - datas_ok, key=lambda x: (x[2], x[1], x[0]))]
+        fora += sorted({c for c in _RE_COD.findall(txt.upper()) if c not in fonte_up})
+        return fora
+
+    conf = {}
+    for chave, campos in (("causas", ("descricao", "base")), ("acoes", ("descricao", "base")),
+                          ("evidencias", ("data", "descricao"))):
+        for i, item in enumerate(resultado.get(chave, [])):
+            if (f := faltando(" ".join(str(item.get(c, "")) for c in campos))):
+                conf.setdefault(chave, {})[str(i)] = f
+    for chave in ("contencao", "porques_ocorrencia", "porques_nao_deteccao"):
+        for i, txt in enumerate(resultado.get(chave, [])):
+            if (f := faltando(txt)):
+                conf.setdefault(chave, {})[str(i)] = f
+    if (f := faltando(resultado.get("leitura_historico"))):
+        conf["leitura_historico"] = {"0": f}
+    return conf
+
+
 def _gerar(rid, rec, pacote, marcados, conversa=None):
     """Envia o pacote (e, ao refazer, a conversa) e grava o resultado. Devolve None ou a mensagem de erro."""
     cfg = _config()
@@ -435,7 +491,7 @@ def _gerar(rid, rec, pacote, marcados, conversa=None):
     resultado.get("evidencias", []).sort(key=lambda e: _data_ordem(e.get("data", "")))
     resultado.update(gerado_em=datetime.now(), por=session.get("usuario"), modelo=modelo,
                      aceitas={"causas": [], "acoes": []}, tokens=tokens, anexos_enviados=sorted(marcados),
-                     refeito=bool(conversa))
+                     refeito=bool(conversa), conferencia=_conferir(resultado, texto))
     _gravar(rid, "resultado.json", resultado)
     return None
 

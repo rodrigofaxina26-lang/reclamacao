@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 {% block titulo %}Assistente · {{ rec.codigo }}{% endblock %}
 {% block conteudo %}
+{% macro alerta(tipo, i) %}{% set f = ((resultado.conferencia or {}).get(tipo) or {}).get(i|string) %}{% if f %}
+  <div class="nao-conferido">⚠ Não encontrei nos dados enviados: <strong>{{ f|join(', ') }}</strong>. Confira antes de usar{{ ' (pode estar no PDF anexado)' if resultado.anexos_enviados }}.</div>
+{% endif %}{% endmacro %}
 <h1>Assistente de análise <small>{{ rec.codigo }} · {{ rec.cliente.nome }} · {{ rec.part_number }} · {{ rec.modo_falha }}</small></h1>
 <p><a href="{{ url_for('rec.detalhe', rid=rec.id, aba='D4') }}">← voltar para a reclamação</a></p>
 
@@ -60,6 +63,10 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
 <section class="caixa sugestao" id="sugestoes" style="margin-top:16px">
   <h3 style="margin-top:0">3. SUGESTÕES do assistente <span class="tag">não confirmadas</span></h3>
   <p class="legenda">Geradas em {{ resultado.gerado_em[:16].replace('T', ' ') }} ({{ resultado.modelo }}). Nada abaixo está no 8D até você clicar em incluir.</p>
+  {% if resultado.conferencia is defined %}
+  {% set n_conf = resultado.conferencia.values()|map('length')|sum %}
+  <p class="{{ 'msg msg-alerta' if n_conf else 'legenda' }}">Conferência automática: {{ n_conf ~ ' trecho(s) citam data ou código que não está nos dados enviados (marcados com ⚠)' if n_conf else 'todas as datas e códigos citados foram encontrados nos dados enviados ✔' }}.</p>
+  {% endif %}
   <h4>E-mail do cliente</h4><p>{{ resultado.resumo_email }}</p>
   {% if resultado.d2 %}
   <h4>Descrição do problema (D2 · 5W2H)</h4>
@@ -72,11 +79,11 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <form method="post" action="{{ url_for('ia.aceitar_d2', rid=rec.id) }}" class="linha">
     <button type="submit">Preencher os campos vazios do D2</button></form>
   {% endif %}
-  <h4>O que o histórico mostra</h4><p>{{ resultado.leitura_historico }}</p>
+  <h4>O que o histórico mostra</h4><p>{{ resultado.leitura_historico }}</p>{{ alerta('leitura_historico', 0) }}
   {% if resultado.contencao %}
   <h4>Contenção sugerida (D3)</h4>
   <p class="legenda">Referência para o D3: confira o que já foi feito e registre na aba D3.</p>
-  <ul>{% for c in resultado.contencao %}<li>{{ c }}</li>{% endfor %}</ul>
+  <ul>{% for c in resultado.contencao %}<li>{{ c }}{{ alerta('contencao', loop.index0) }}</li>{% endfor %}</ul>
   {% endif %}
 
   {% if resultado.evidencias %}
@@ -84,7 +91,7 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <table class="tabela">
     <thead><tr><th>Data</th><th>Fonte</th><th>O que mostra</th><th></th></tr></thead>
     <tbody>{% for e in resultado.evidencias %}
-    <tr><td class="nowrap">{{ e.data }}</td><td>{{ e.fonte }}</td><td>{{ e.descricao }}</td>
+    <tr><td class="nowrap">{{ e.data }}</td><td>{{ e.fonte }}</td><td>{{ e.descricao }}{{ alerta('evidencias', loop.index0) }}</td>
       <td class="nowrap">{% if e.link %}<a href="{{ e.link }}" target="_blank">abrir ↗</a>{% endif %}</td></tr>
     {% endfor %}</tbody>
   </table>
@@ -94,8 +101,11 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <h4>Causas sugeridas (Ishikawa)</h4>
   {% for c in resultado.causas %}
   <div class="causa">
-    <span class="tag">{{ c.categoria }}</span> {{ c.descricao }}
-    <div class="legenda">Base: {{ c.base }}</div>
+    <span class="tag">{{ c.categoria }}</span>
+    {% if c.sustentacao == 'HIPOTESE' %}<span class="tag tag-hipotese" title="Sem registro nos dados que sustente: verificar">hipótese</span>
+    {% elif c.sustentacao == 'DADO' %}<span class="tag tag-dado" title="Sustentada por registro dos sistemas">com dado</span>{% endif %}
+    {{ c.descricao }}
+    <div class="legenda">Base: {{ c.base }}</div>{{ alerta('causas', loop.index0) }}
     {% if loop.index0 in resultado.aceitas.causas %}<span class="sem sem-verde">incluída no D4</span>
     {% else %}<form method="post" action="{{ url_for('ia.aceitar', rid=rec.id, tipo='causas', i=loop.index0) }}" class="linha">
       <button type="submit">Incluir no D4 (em análise)</button></form>{% endif %}
@@ -105,15 +115,15 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   <h4>5 Porquês sugeridos</h4>
   <p class="legenda">Só referência: copie para a cadeia da causa provável no D4 depois de confirmar com a equipe.</p>
   <div class="painel">
-    <div><strong>{{ tipos_porque.OCORRENCIA }}</strong><ol>{% for p in resultado.porques_ocorrencia %}<li>{{ p }}</li>{% endfor %}</ol></div>
-    <div><strong>{{ tipos_porque.NAO_DETECCAO }}</strong><ol>{% for p in resultado.porques_nao_deteccao %}<li>{{ p }}</li>{% endfor %}</ol></div>
+    <div><strong>{{ tipos_porque.OCORRENCIA }}</strong><ol>{% for p in resultado.porques_ocorrencia %}<li>{{ p }}{{ alerta('porques_ocorrencia', loop.index0) }}</li>{% endfor %}</ol></div>
+    <div><strong>{{ tipos_porque.NAO_DETECCAO }}</strong><ol>{% for p in resultado.porques_nao_deteccao %}<li>{{ p }}{{ alerta('porques_nao_deteccao', loop.index0) }}</li>{% endfor %}</ol></div>
   </div>
 
   <h4>Ações sugeridas</h4>
   {% for a in resultado.acoes %}
   <div class="causa" id="acao{{ loop.index0 }}">
     <span class="tag">{{ a.tipo }}</span> <span class="tag">{{ tipos_porque[a.foco] }}</span> {{ a.descricao }}
-    <div class="legenda">Base: {{ a.base }}</div>
+    <div class="legenda">Base: {{ a.base }}</div>{{ alerta('acoes', loop.index0) }}
     {% if loop.index0 in resultado.aceitas.acoes %}<span class="sem sem-verde">incluída no D5</span>
     {% else %}<form method="post" action="{{ url_for('ia.aceitar', rid=rec.id, tipo='acoes', i=loop.index0) }}" class="linha">
       <input name="responsavel" placeholder="Responsável" required>
