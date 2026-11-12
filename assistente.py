@@ -209,13 +209,16 @@ def _chamar_gemini(cfg, chave, anexos, texto, instrucoes=INSTRUCOES, esquema=ESQ
     from google.genai import errors, types
 
     partes = [types.Part.from_bytes(data=dados, mime_type=tipo) for tipo, dados in anexos] + [texto]
-    # limite de 4 min por tentativa (em ms): a página espera a resposta, não pode ficar presa
-    cliente = genai.Client(api_key=chave, http_options=types.HttpOptions(timeout=240_000))  # manter a referência: o SDK fecha a conexão se o objeto sumir
-    # modelo principal sobrecarregado (503) ou sem cota (429) -> tenta os modelos reserva, em ordem
-    # o principal entra 2x: a sobrecarga do Google costuma passar em segundos
-    modelos = [cfg["modelo"]] * 2 + [m for m in cfg.get("modelos_reserva", []) if m != cfg["modelo"]]
+    # limite de 2,5 min por tentativa (em ms): a página espera a resposta, não pode ficar presa
+    cliente = genai.Client(api_key=chave, http_options=types.HttpOptions(timeout=150_000))  # manter a referência: o SDK fecha a conexão se o objeto sumir
+    # Google sobrecarregado (500/502/503/504), sem cota (429) ou modelo retirado (404) -> próximo modelo.
+    # As reservas do código entram depois das do fontes.json: um fontes.json antigo no servidor não
+    # fica preso a uma lista curta quando o Google lota um modelo.
+    from fontes import PADRAO
+    modelos = list(dict.fromkeys([cfg["modelo"]] + cfg.get("modelos_reserva", []) + PADRAO["modelos_reserva"]))
+    inicio, LIMITE = time.time(), 6 * 60   # soma das tentativas: depois disso desiste e avisa
     for n, modelo in enumerate(modelos):
-        ultimo = n == len(modelos) - 1
+        ultimo = n == len(modelos) - 1 or time.time() - inicio > LIMITE - 60
         try:
             resp = cliente.models.generate_content(
                 model=modelo, contents=partes,
@@ -225,17 +228,20 @@ def _chamar_gemini(cfg, chave, anexos, texto, instrucoes=INSTRUCOES, esquema=ESQ
                     **({"response_mime_type": "application/json", "response_json_schema": esquema} if esquema else {})))
             break
         except errors.ClientError as e:
+            if e.code in (404, 429) and not ultimo:
+                continue
             if e.code == 429:
-                if not ultimo:
-                    continue
                 raise ErroIA("Limite da camada gratuita do Gemini atingido. Aguarde alguns minutos e tente de novo.")
             raise ErroIA(f"Gemini recusou o pedido ({e.code}): {e.message}. Confira a chave e o modelo em instance/fontes.json.")
         except errors.APIError as e:
-            if e.code == 503 and not ultimo:
-                time.sleep(3)
+            if e.code in (500, 502, 503, 504) and not ultimo:
+                time.sleep(2)
                 continue
-            raise ErroIA(f"Gemini indisponível no momento ({e.code}). Tente de novo em alguns minutos.")
-        except Exception as e:  # rede, proxy, timeout
+            raise ErroIA(f"Todos os modelos do Gemini estão sobrecarregados agora (último erro {e.code}). "
+                         "Tente de novo em alguns minutos.")
+        except Exception as e:  # rede, proxy, timeout do lado de cá
+            if "timed out" in str(e).lower() and not ultimo:
+                continue
             raise ErroIA(f"Sem conexão com o Gemini (internet/proxy): {e}")
     if not resp.text:
         raise ErroIA("O Gemini não devolveu resposta (pode ter bloqueado o conteúdo). Tente de novo.")

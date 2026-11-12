@@ -29,7 +29,7 @@ PADRAO = {
     # ou "claude" (chave em instance/anthropic_key.txt)
     "provedor": "gemini",
     "modelo": "gemini-flash-latest",
-    "modelos_reserva": ["gemini-flash-lite-latest"],
+    "modelos_reserva": ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-3.5-flash-lite"],
 }
 TIMEOUT = 15
 MAX_REGISTROS = 40   # por fonte, para não estourar o pacote enviado ao Claude
