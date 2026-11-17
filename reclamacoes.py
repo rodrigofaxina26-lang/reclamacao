@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from datetime import datetime, date
 
@@ -52,6 +53,25 @@ def _bloqueada(rec, aba):
 
 
 # ---------------- lista ----------------
+def _num_cliente(txt):
+    """'099/26' ordena por ano e depois número (26-099 < 26-100); outros formatos, pelos números do texto."""
+    txt = (txt or "").strip()
+    if (m := re.fullmatch(r"(\d+)\s*/\s*(\d{2,4})", txt)):
+        return (0, int(m.group(2)) % 100, int(m.group(1)), txt)
+    return (1 if txt else 2, 0, 0, [int(n) if n.isdigit() else n for n in re.split(r"(\d+)", txt.upper())])
+
+
+ORDENS = {
+    "codigo": lambda r: r.codigo or "",
+    "cliente": lambda r: (r.cliente.nome, r.codigo or ""),
+    "num": lambda r: _num_cliente(r.num_reclamacao_cliente),
+    "pn": lambda r: (r.part_number or "", r.codigo or ""),
+    "modo": lambda r: (r.modo_falha or "", r.codigo or ""),
+    "recebida": lambda r: r.data_recebimento or datetime.min,
+    "status": lambda r: (r.status or "", r.codigo or ""),
+}
+
+
 @bp.route("/")
 def lista():
     q = Reclamacao.query.join(Cliente)
@@ -66,8 +86,12 @@ def lista():
         q = q.filter(Reclamacao.status == status)
     if pn:
         q = q.filter(Reclamacao.part_number.ilike(f"%{pn}%"))
-    recs = q.order_by(Reclamacao.data_recebimento.desc()).all()
-    return render_template("lista.html", recs=recs, pendencias=_pendencias(), clientes=Cliente.query.order_by(Cliente.nome).all(),
+    ordem = request.args.get("ordem", "recebida")
+    if ordem not in ORDENS:
+        ordem = "recebida"
+    desc = request.args.get("dir", "desc" if ordem == "recebida" else "asc") == "desc"
+    recs = sorted(q.all(), key=ORDENS[ordem], reverse=desc)
+    return render_template("lista.html", recs=recs, pendencias=_pendencias(), ordem=ordem, desc=desc, clientes=Cliente.query.order_by(Cliente.nome).all(),
                            status_lista=STATUS, filtro={"cliente": cliente_id, "status": status, "pn": pn})
 
 

@@ -49,8 +49,12 @@
   <a href="{{ url_for('rec.lista') }}">Limpar</a>
 </form>
 <table class="tabela">
-  <thead><tr><th>Código</th><th>Cliente</th><th>Nº cliente</th><th>PN</th><th>Modo de falha</th>
-  <th>Recebida</th><th>Status</th><th>D3</th><th>D4</th><th>D8</th></tr></thead>
+  {% macro col(chave, nome) %}{% set ativa = ordem == chave %}
+    <th><a class="ordenar" href="{{ url_for('rec.lista', cliente=filtro.cliente or '', status=filtro.status, pn=filtro.pn, ordem=chave,
+      dir=('asc' if desc else 'desc') if ativa else ('desc' if chave == 'recebida' else 'asc')) }}">{{ nome }}{{ (' ▼' if desc else ' ▲') if ativa }}</a></th>
+  {% endmacro %}
+  <thead><tr>{{ col('codigo', 'Código') }}{{ col('cliente', 'Cliente') }}{{ col('num', 'Nº cliente') }}{{ col('pn', 'PN') }}{{ col('modo', 'Modo de falha') }}
+  {{ col('recebida', 'Recebida') }}{{ col('status', 'Status') }}<th>D3</th><th>D4</th><th>D8</th></tr></thead>
   <tbody>
   {% for r in recs %}
   <tr>
