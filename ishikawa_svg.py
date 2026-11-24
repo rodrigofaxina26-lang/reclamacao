@@ -5,8 +5,9 @@ from models import CATEGORIAS_6M
 
 LARGURA = 1100
 PASSO = 22          # distância vertical entre causas no mesmo osso
-MAX_TEXTO = 26      # caracteres visíveis por causa (texto completo no tooltip)
-CORES = {"PROVAVEL": "#b3261e", "DESCARTADA": "#9a9a9a", "EM_ANALISE": "#222"}
+MAX_TEXTO = 22      # caracteres visíveis por causa (texto completo no tooltip)
+CORES = {"RELEVANTE": "#b3261e", "IRRELEVANTE": "#9a9a9a"}
+SIGLAS = {"OCORRENCIA": "O", "NAO_DETECCAO": "ND", "OCORRENCIA,NAO_DETECCAO": "O/ND"}
 
 
 def _curto(txt):
@@ -14,7 +15,7 @@ def _curto(txt):
     return txt if len(txt) <= MAX_TEXTO else txt[:MAX_TEXTO - 1] + "…"
 
 
-def gerar_svg(causas, efeito):
+def gerar_svg(causas, efeito, porques=()):
     por_cat = {c: [x for x in causas if x.categoria == c] for c in CATEGORIAS_6M}
     maior = max([len(v) for v in por_cat.values()] + [2])
     osso = 50 + maior * PASSO            # comprimento vertical de cada osso
@@ -49,10 +50,12 @@ def gerar_svg(causas, efeito):
             y = y_fim - sinal * dist
             x = x_base - abs(y - meio) * inclinacao
             cor = CORES.get(c.situacao, "#222")
-            deco = ' text-decoration="line-through"' if c.situacao == "DESCARTADA" else ""
-            peso = ' font-weight="700"' if c.situacao == "PROVAVEL" else ""
+            deco = ' text-decoration="line-through"' if c.situacao == "IRRELEVANTE" else ""
+            peso = ' font-weight="700"' if c.situacao == "RELEVANTE" else ""
+            sigla = SIGLAS.get(c.tipo_causa(porques), "?")
             s.append(f'<line x1="{x - 175:.1f}" y1="{y:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="{cor}" stroke-width="1"/>')
             s.append(f'<text x="{x - 177:.1f}" y="{y - 3:.1f}" fill="{cor}"{deco}{peso} text-anchor="start">'
-                     f'<title>{escape(c.descricao)} ({c.situacao})</title>{escape(_curto(c.descricao))}</text>')
+                     f'<title>{escape(c.descricao)} ({c.situacao.lower()} · {sigla})</title>'
+                     f'[{sigla}] {escape(_curto(c.descricao))}</text>')
     s.append("</svg>")
     return "\n".join(s)

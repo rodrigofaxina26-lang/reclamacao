@@ -102,13 +102,14 @@ com a chave (só a chave, uma linha). Dá para coletar e conferir os dados mesmo
   {% for c in resultado.causas %}
   <div class="causa">
     <span class="tag">{{ c.categoria }}</span>
+    {% if c.tipo %}<span class="tag tag-tipo" title="O = ocorrência · ND = não detecção">{{ {'OCORRENCIA': 'O', 'NAO_DETECCAO': 'ND', 'OCORRENCIA,NAO_DETECCAO': 'O/ND'}.get(c.tipo, '?') }}</span>{% endif %}
     {% if c.sustentacao == 'HIPOTESE' %}<span class="tag tag-hipotese" title="Sem registro nos dados que sustente: verificar">hipótese</span>
     {% elif c.sustentacao == 'DADO' %}<span class="tag tag-dado" title="Sustentada por registro dos sistemas">com dado</span>{% endif %}
     {{ c.descricao }}
     <div class="legenda">Base: {{ c.base }}</div>{{ alerta('causas', loop.index0) }}
     {% if loop.index0 in resultado.aceitas.causas %}<span class="sem sem-verde">incluída no D4</span>
     {% else %}<form method="post" action="{{ url_for('ia.aceitar', rid=rec.id, tipo='causas', i=loop.index0) }}" class="linha">
-      <button type="submit">Incluir no D4 (em análise)</button></form>{% endif %}
+      <button type="submit">Incluir no D4 (relevante)</button></form>{% endif %}
   </div>
   {% endfor %}
 

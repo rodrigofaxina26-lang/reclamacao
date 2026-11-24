@@ -9,7 +9,10 @@ from servicos import write_lock, registrar, converter, buscar_recorrencias
 
 bp = Blueprint("ana", __name__)
 
-SITUACOES = ["EM_ANALISE", "PROVAVEL", "DESCARTADA"]
+SITUACOES = {"RELEVANTE": "Relevante", "IRRELEVANTE": "Irrelevante"}
+# tipo de cada linha da espinha de peixe (guardado em CausaIshikawa.pernas) -> nome e sigla
+TIPOS_CAUSA = {"OCORRENCIA": ("Ocorrência", "O"), "NAO_DETECCAO": ("Não detecção", "ND"),
+               "OCORRENCIA,NAO_DETECCAO": ("Ocorrência/Não detecção", "O/ND")}
 TIPOS_PORQUE = {"OCORRENCIA": "Ocorrência", "NAO_DETECCAO": "Não detecção"}
 TIPOS_ACAO = ["CORRETIVA", "PREVENTIVA"]
 STATUS_ACAO = ["ABERTA", "EM_ANDAMENTO", "CONCLUIDA"]
@@ -48,56 +51,49 @@ def causa_add(rid):
         return bloqueio
     cat = request.form.get("categoria")
     desc = request.form.get("descricao", "").strip()
-    if cat not in CATEGORIAS_6M or not desc:
-        flash("Escolha a categoria 6M e descreva a causa.", "erro")
+    tipo = request.form.get("tipo", "")
+    if cat not in CATEGORIAS_6M or not desc or tipo not in TIPOS_CAUSA:
+        flash("Escolha o M, o tipo (ocorrência / não detecção) e descreva a causa.", "erro")
         return _voltar(rec, "D4", "#ishikawa")
     with write_lock:
-        db.session.add(CausaIshikawa(reclamacao_id=rec.id, categoria=cat, descricao=desc))
-        registrar(rec.id, f"D4 · Causa incluída [{cat}]: {desc}")
+        db.session.add(CausaIshikawa(reclamacao_id=rec.id, categoria=cat, descricao=desc,
+                                     situacao="RELEVANTE", pernas=tipo))
+        registrar(rec.id, f"D4 · Causa incluída [{cat} · {TIPOS_CAUSA[tipo][1]}]: {desc}")
         db.session.commit()
     return _voltar(rec, "D4", "#ishikawa")
 
 
 @bp.route("/<int:rid>/causas/<int:cid>", methods=["POST"])
 def causa_salvar(rid, cid):
+    """Classificação (relevante/irrelevante), tipo (O, ND, O/ND) e evidência. Tirar uma perna do tipo
+    apaga os 5 Porquês dela (a tela pede confirmação antes)."""
     rec, bloqueio = _rec_editavel(rid, "D4")
     if bloqueio:
         return bloqueio
     c = _filho(CausaIshikawa, cid, rec)
     situacao = request.form.get("situacao")
+    tipo = request.form.get("tipo", "")
     evidencia = request.form.get("evidencia", "").strip() or None
-    if situacao not in SITUACOES:
-        abort(400)
-    if situacao == "DESCARTADA" and not evidencia:
-        flash("Para DESCARTAR uma causa é obrigatório informar a evidência.", "erro")
+    if situacao not in SITUACOES or tipo not in TIPOS_CAUSA:
+        flash("Escolha a classificação e o tipo da causa.", "erro")
+        return _voltar(rec, "D4", f"#causa-{c.id}")
+    if situacao == "IRRELEVANTE" and not evidencia:
+        flash("Para marcar uma causa como IRRELEVANTE é obrigatório informar a evidência.", "erro")
         return _voltar(rec, "D4", f"#causa-{c.id}")
     with write_lock:
         if c.situacao != situacao:
-            registrar(rec.id, f"D4 · Causa '{c.descricao[:60]}': {c.situacao} → {situacao}")
+            registrar(rec.id, f"D4 · Causa '{c.descricao[:60]}': {SITUACOES.get(c.situacao, c.situacao)} → {SITUACOES[situacao]}")
             c.situacao = situacao
+        antes = c.tipo_causa(rec.porques)
+        if antes != tipo:
+            for t in set(antes.split(",")) - set(tipo.split(",")) - {""}:
+                Porque.query.filter_by(causa_id=c.id, tipo=t).delete()
+            registrar(rec.id, f"D4 · Causa '{c.descricao[:60]}': tipo {TIPOS_CAUSA[antes][0] if antes in TIPOS_CAUSA else '(não definido)'}"
+                              f" → {TIPOS_CAUSA[tipo][0]}")
+        c.pernas = tipo
         if c.evidencia != evidencia:
             registrar(rec.id, f"D4 · Evidência da causa '{c.descricao[:60]}': {evidencia or '(vazio)'}")
             c.evidencia = evidencia
-        db.session.commit()
-    return _voltar(rec, "D4", f"#causa-{c.id}")
-
-
-@bp.route("/<int:rid>/causas/<int:cid>/pernas", methods=["POST"])
-def causa_pernas(rid, cid):
-    """Quais 5 Porquês (ocorrência / não detecção) esta causa usa. Desmarcar apaga os porquês daquela perna."""
-    rec, bloqueio = _rec_editavel(rid, "D4")
-    if bloqueio:
-        return bloqueio
-    c = _filho(CausaIshikawa, cid, rec)
-    novas = [t for t in TIPOS_PORQUE if t in request.form.getlist("perna")]
-    antes = c.pernas_ativas(rec.porques)
-    with write_lock:
-        for t in set(antes) - set(novas):
-            Porque.query.filter_by(causa_id=c.id, tipo=t).delete()
-        c.pernas = ",".join(novas)
-        if novas != antes:
-            registrar(rec.id, f"D4 · Causa '{c.descricao[:60]}' explica: "
-                              + (" e ".join(TIPOS_PORQUE[t] for t in novas) or "(nenhuma perna)"))
         db.session.commit()
     return _voltar(rec, "D4", f"#causa-{c.id}")
 
@@ -125,8 +121,8 @@ def porques_salvar(rid, cid, tipo):
     if bloqueio:
         return bloqueio
     c = _filho(CausaIshikawa, cid, rec)
-    if c.situacao != "PROVAVEL":
-        flash("5 Porquês só pode ser feito em causa PROVÁVEL.", "erro")
+    if c.situacao != "RELEVANTE":
+        flash("5 Porquês só pode ser feito em causa RELEVANTE.", "erro")
         return _voltar(rec, "D4", f"#causa-{c.id}")
     # ordem 0 = o problema (ponto de partida); 1..5 = cada resposta a "por quê?" da linha de cima
     inicio = request.form.get("inicio", "").strip()

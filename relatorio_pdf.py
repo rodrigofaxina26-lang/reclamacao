@@ -17,7 +17,8 @@ AZUL = colors.HexColor("#1f3a5f")
 CINZA = colors.HexColor("#eef2f6")
 LINHA = colors.HexColor("#c9d3de")
 TIPOS_PORQUE = {"OCORRENCIA": "Ocorrência", "NAO_DETECCAO": "Não detecção"}
-SITUACAO = {"EM_ANALISE": "Em análise", "PROVAVEL": "Provável", "DESCARTADA": "Descartada"}
+SITUACAO = {"RELEVANTE": "Relevante", "IRRELEVANTE": "Irrelevante"}
+SIGLAS = {"OCORRENCIA": "O", "NAO_DETECCAO": "ND", "OCORRENCIA,NAO_DETECCAO": "O/ND"}
 
 _base = getSampleStyleSheet()
 TXT = ParagraphStyle("txt", parent=_base["Normal"], fontName="Helvetica", fontSize=9, leading=11.5)
@@ -146,11 +147,13 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
 
     d4 = []
     if rec.causas:
-        linhas = [[_p("6M", TXT_B), _p("Causa", TXT_B), _p("Situação", TXT_B), _p("Evidência", TXT_B)]]
+        linhas = [[_p("6M", TXT_B), _p("Tipo", TXT_B), _p("Causa", TXT_B), _p("Classificação", TXT_B), _p("Evidência", TXT_B)]]
         for c in sorted(rec.causas, key=lambda c: (c.categoria or "", c.id)):
-            linhas.append([_p(c.categoria), _p(c.descricao), _p(SITUACAO.get(c.situacao, c.situacao)), _p(c.evidencia)])
-        d4 += [_p("Ishikawa (6M)", TXT_B), Spacer(1, 1.5 * mm), _tabela(linhas, [24, 76, 22, 58])]
-    for c in [c for c in rec.causas if c.situacao == "PROVAVEL"]:
+            linhas.append([_p(c.categoria), _p(SIGLAS.get(c.tipo_causa(rec.porques))), _p(c.descricao),
+                           _p(SITUACAO.get(c.situacao, c.situacao)), _p(c.evidencia)])
+        d4 += [_p("Ishikawa (6M)", TXT_B), Spacer(1, 1.5 * mm), _tabela(linhas, [22, 13, 63, 27, 55]),
+               Spacer(1, 1 * mm), _p("Tipo: O = ocorrência · ND = não detecção · O/ND = as duas", PEQ)]
+    for c in [c for c in rec.causas if c.situacao == "RELEVANTE"]:
         for tipo, nome in TIPOS_PORQUE.items():
             cadeia = sorted((p for p in rec.porques if p.causa_id == c.id and p.tipo == tipo and not _vazio(p.resposta)),
                             key=lambda p: p.ordem or 0)
@@ -190,8 +193,9 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
     if evidencias:
         e += _secao("Evidências anexadas")
         e.append(_tabela([[_p("Etapa", TXT_B), _p("Arquivo", TXT_B), _p("Descrição", TXT_B)]] +
-                         [[_p(ev.etapa), _p(ev.arquivo.split("_", 1)[-1]), _p(ev.descricao)] for ev in evidencias],
-                         [18, 80, 82]))
+                         [[_p(ev.etapa + (f" · {ev.categoria}" if ev.categoria else "")), _p(ev.arquivo.split("_", 1)[-1]),
+                           _p(ev.descricao)] for ev in evidencias],
+                         [30, 72, 78]))
         e += [Spacer(1, 1.5 * mm), _p("Os arquivos ficam no sistema de reclamações 8D.", PEQ)]
 
     doc.build(e, onFirstPage=rodape, onLaterPages=rodape)

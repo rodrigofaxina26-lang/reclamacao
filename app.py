@@ -34,6 +34,11 @@ def _criar_triggers():
 
 def _migrar():
     """Colunas novas em bancos já existentes (create_all não altera tabela)."""
+    # D4: Provável/Em análise -> Relevante; Descartada -> Irrelevante
+    db.session.execute(text("UPDATE causa_ishikawa SET situacao = 'RELEVANTE' WHERE situacao IN ('PROVAVEL', 'EM_ANALISE')"))
+    db.session.execute(text("UPDATE causa_ishikawa SET situacao = 'IRRELEVANTE' WHERE situacao = 'DESCARTADA'"))
+    if "categoria" not in {r[1] for r in db.session.execute(text("PRAGMA table_info(evidencia)"))}:
+        db.session.execute(text("ALTER TABLE evidencia ADD COLUMN categoria VARCHAR(20)"))
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(causa_ishikawa)"))}
     if "pernas" not in cols:
         db.session.execute(text("ALTER TABLE causa_ishikawa ADD COLUMN pernas VARCHAR(40)"))

@@ -37,41 +37,46 @@
 {% elif aba == 'D4' %}
   <h3 id="ishikawa" style="margin-top:0">Ishikawa (6M)</h3>
   <div class="svg-caixa">{{ svg|safe }}</div>
-  <p class="legenda"><span style="color:#b3261e;font-weight:700">Provável</span> · Em análise · <span style="color:#9a9a9a;text-decoration:line-through">Descartada</span></p>
+  <p class="legenda"><span style="color:#b3261e;font-weight:700">Relevante</span> ·
+    <span style="color:#9a9a9a;text-decoration:line-through">Irrelevante</span> ·
+    [O] ocorrência · [ND] não detecção · [O/ND] as duas</p>
   {% if not fechada %}
   <form method="post" action="{{ url_for('ana.causa_add', rid=rec.id) }}" class="linha">
-    <select name="categoria" required><option value="">Categoria 6M</option>{% for c in categorias %}<option>{{ c }}</option>{% endfor %}</select>
+    <select name="categoria" required><option value="">M (6M)</option>{% for c in categorias %}<option>{{ c }}</option>{% endfor %}</select>
+    <select name="tipo" required><option value="">Tipo</option>{% for k, (nome, sigla) in tipos_causa.items() %}<option value="{{ k }}">{{ nome }}</option>{% endfor %}</select>
     <input name="descricao" placeholder="Descreva a causa potencial" required style="flex:1;min-width:260px">
     <button>Incluir causa</button>
   </form>
   {% endif %}
 
-  {% for cat in categorias %}{% for c in rec.causas if c.categoria == cat %}
+  {% for cat in categorias %}
+  {% set causas_m = rec.causas|selectattr('categoria', 'equalto', cat)|list %}
+  {% set anexos_m = evidencias|selectattr('categoria', 'equalto', cat)|list %}
+  <section class="bloco-m" id="m-{{ loop.index0 }}">
+  <h4 class="titulo-m">{{ cat }} <small>{{ causas_m|length }} causa(s){{ ' · ' ~ anexos_m|length ~ ' anexo(s)' if anexos_m }}</small></h4>
+  {% for c in causas_m %}
+  {% set tipo = c.tipo_causa(rec.porques) %}
+  {% set pernas = c.pernas_ativas(rec.porques) %}
   <div class="causa causa-{{ c.situacao|lower }}" id="causa-{{ c.id }}">
-    <div class="causa-topo"><span class="tag">{{ c.categoria }}</span> <strong>{{ c.descricao }}</strong>
+    <div class="causa-topo">
+      {% if tipo %}<span class="tag tag-tipo">{{ tipos_causa[tipo][1] }}</span>{% else %}<span class="tag tag-hipotese">definir tipo</span>{% endif %}
+      <strong>{{ c.descricao }}</strong>
       {% if not fechada %}<form method="post" action="{{ url_for('ana.causa_excluir', rid=rec.id, cid=c.id) }}" class="inline"
         onsubmit="return confirm('Excluir esta causa e os 5 porquês ligados a ela?')"><button class="link">excluir</button></form>{% endif %}</div>
-    <form method="post" action="{{ url_for('ana.causa_salvar', rid=rec.id, cid=c.id) }}" class="linha">
+    {% set com_porques = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('ordem')|selectattr('resposta')|map(attribute='tipo')|unique|list %}
+    <form method="post" action="{{ url_for('ana.causa_salvar', rid=rec.id, cid=c.id) }}" class="linha"
+      onsubmit="var t=this.tipo.value.split(','), perde={{ com_porques|tojson }}.filter(function(x){return t.indexOf(x)<0});
+                return !perde.length || confirm('Mudar o tipo apaga os 5 Porquês de ' + perde.map(function(x){return x=='OCORRENCIA'?'ocorrência':'não detecção'}).join(' e ') + ' desta causa. Continuar?')">
       <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
-      <select name="situacao">{% for s in situacoes %}<option {{ 'selected' if c.situacao == s }}>{{ s }}</option>{% endfor %}</select>
-      <input name="evidencia" value="{{ c.evidencia or '' }}" placeholder="Evidência (obrigatória para DESCARTADA)" style="flex:1;min-width:300px">
+      <select name="situacao">{% for k, nome in situacoes.items() %}<option value="{{ k }}" {{ 'selected' if c.situacao == k }}>{{ nome }}</option>{% endfor %}</select>
+      <select name="tipo" required>{% if not tipo %}<option value="">Tipo?</option>{% endif %}
+        {% for k, (nome, sigla) in tipos_causa.items() %}<option value="{{ k }}" {{ 'selected' if tipo == k }}>{{ nome }}</option>{% endfor %}</select>
+      <input name="evidencia" value="{{ c.evidencia or '' }}" placeholder="Evidência (obrigatória para IRRELEVANTE)" style="flex:1;min-width:260px">
       <button>Salvar</button>
       </fieldset>
     </form>
-    {% if c.situacao == 'PROVAVEL' %}
-    {% set pernas = c.pernas_ativas(rec.porques) %}
-    <form method="post" action="{{ url_for('ana.causa_pernas', rid=rec.id, cid=c.id) }}" class="linha pernas">
-      <fieldset class="linha" style="margin:0" {{ 'disabled' if fechada }}>
-      <strong>Esta causa explica:</strong>
-      {% for t, tnome in tipos_porque.items() %}
-      {% set tem = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|selectattr('resposta')|list %}
-      <label class="check"><input type="checkbox" name="perna" value="{{ t }}" {{ 'checked' if t in pernas }}
-        onchange="if(!this.checked && {{ 'true' if tem else 'false' }} && !confirm('Desmarcar apaga os 5 Porquês de {{ tnome }} desta causa. Continuar?')){this.checked=true;return;} this.form.submit()">
-        {{ tnome }}</label>
-      {% endfor %}
-      {% if not pernas %}<span class="legenda">Marque a(s) perna(s) para abrir os 5 Porquês.</span>{% endif %}
-      </fieldset>
-    </form>
+    {% if c.situacao == 'RELEVANTE' %}
+    {% if not pernas %}<p class="legenda">Escolha o tipo e salve para abrir os 5 Porquês.</p>{% endif %}
     <div class="porques">
     {% for t, tnome in tipos_porque.items() if t in pernas %}
       {% set cadeia = rec.porques|selectattr('causa_id', 'equalto', c.id)|selectattr('tipo', 'equalto', t)|list %}
@@ -99,7 +104,25 @@
     </div>
     {% endif %}
   </div>
-  {% endfor %}{% else %}{% endfor %}
+  {% else %}<p class="vazio" style="margin:4px 0">Nenhuma causa neste M.</p>
+  {% endfor %}
+  <div class="anexos-m">
+    <strong>Anexos · {{ cat }}</strong>
+    <ul>{% for e in anexos_m %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}
+      {% if not fechada %}<form method="post" action="{{ url_for('rec.evidencia_excluir', eid=e.id) }}" class="inline"
+        onsubmit="return confirm('Excluir este arquivo?')"><button class="link">excluir</button></form>{% endif %}</li>
+    {% else %}<li class="vazio">Nenhum.</li>{% endfor %}</ul>
+    {% if not fechada %}
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('rec.evidencia_upload', rid=rec.id, aba='D4') }}" class="linha">
+      <input type="hidden" name="categoria" value="{{ cat }}">
+      <input type="file" name="arquivo" required>
+      <input name="descricao" placeholder="Descrição (ex.: a qual causa se refere)" maxlength="200" style="flex:1;min-width:220px">
+      <button>Anexar em {{ cat }}</button>
+    </form>
+    {% endif %}
+  </div>
+  </section>
+  {% endfor %}
   {% if not rec.causas %}<p class="vazio">Nenhuma causa cadastrada.</p>{% endif %}
   <h3>Conclusão da causa raiz</h3>
 
@@ -239,8 +262,8 @@
 {% endif %}
 
 {% if aba != 'HIST' %}
-  <h3>Evidências ({{ aba }})</h3>
-  <ul>{% for e in evidencias %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}
+  <h3>{{ 'Outras evidências (D4, sem M)' if aba == 'D4' else 'Evidências (' ~ aba ~ ')' }}</h3>
+  <ul>{% for e in (evidencias|rejectattr('categoria')|list if aba == 'D4' else evidencias) %}<li><a href="{{ url_for('rec.evidencia_baixar', eid=e.id) }}">{{ e.arquivo.split('_', 1)[1] }}</a>{{ ' - ' ~ e.descricao if e.descricao }}
     {% if not fechada %}<form method="post" action="{{ url_for('rec.evidencia_excluir', eid=e.id) }}" class="inline"
       onsubmit="return confirm('Excluir este arquivo?')"><button class="link">excluir</button></form>{% endif %}</li>
   {% else %}<li class="vazio">Nenhuma.</li>{% endfor %}</ul>

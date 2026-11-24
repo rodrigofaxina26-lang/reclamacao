@@ -14,7 +14,7 @@ from servicos import (eh_admin, write_lock, registrar, gerar_codigo, proximo_id_
                       STATUS_EDITAVEIS)
 import backup
 from ishikawa_svg import gerar_svg
-from analise import SITUACOES, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO, eficacia, LOTES_EFICACIA
+from analise import SITUACOES, TIPOS_CAUSA, TIPOS_PORQUE, TIPOS_ACAO, STATUS_ACAO, eficacia, LOTES_EFICACIA
 from models import CATEGORIAS_6M
 
 bp = Blueprint("rec", __name__)
@@ -185,9 +185,9 @@ def detalhe(rid):
                            evidencias=evidencias, historico=historico,
                            recorrencias=buscar_recorrencias(rec.part_number, rec.modo_falha, rec.id),
                            status_editaveis=STATUS_EDITAVEIS,
-                           svg=gerar_svg(rec.causas, rec.modo_falha) if aba == "D4" else "",
+                           svg=gerar_svg(rec.causas, rec.modo_falha, rec.porques) if aba == "D4" else "",
                            ef=eficacia(rec) if aba == "D8" else None, lotes_eficacia=LOTES_EFICACIA,
-                           categorias=CATEGORIAS_6M, situacoes=SITUACOES, tipos_porque=TIPOS_PORQUE,
+                           categorias=CATEGORIAS_6M, situacoes=SITUACOES, tipos_causa=TIPOS_CAUSA, tipos_porque=TIPOS_PORQUE,
                            tipos_acao=TIPOS_ACAO, status_acao=STATUS_ACAO, tipos_custo=TIPOS_CUSTO,
                            hoje=datetime.now().date())
 
@@ -263,11 +263,14 @@ def evidencia_upload(rid, aba):
     salvo = Evidencia.nome_seguro(nome)
     with write_lock:
         arq.save(os.path.join(current_app.config["UPLOAD_FOLDER"], salvo))
-        db.session.add(Evidencia(reclamacao_id=rec.id, etapa=aba, arquivo=salvo,
+        cat = request.form.get("categoria") if aba == "D4" and request.form.get("categoria") in CATEGORIAS_6M else None
+        db.session.add(Evidencia(reclamacao_id=rec.id, etapa=aba, arquivo=salvo, categoria=cat,
                                  descricao=request.form.get("descricao", "").strip()[:200] or None))
-        registrar(rec.id, f"{aba} · Evidência anexada: {nome}")
+        registrar(rec.id, f"{aba} · Evidência anexada{' (' + cat + ')' if cat else ''}: {nome}")
         db.session.commit()
     flash("Evidência anexada.", "ok")
+    if cat:
+        return redirect(url_for("rec.detalhe", rid=rec.id, aba="D4") + f"#m-{CATEGORIAS_6M.index(cat)}")
     return _voltar(rec, aba)
 
 

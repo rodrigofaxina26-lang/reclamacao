@@ -108,16 +108,18 @@ class Reclamacao(db.Model):
             p.append("Causa de NÃO DETECÇÃO não preenchida")
         if not self.d4_como_comprovada:
             p.append("Causa raiz sem comprovação")
-        # cadeias só contam se ligadas a causa PROVAVEL e com ao menos uma resposta
-        provaveis = {c.id for c in self.causas if c.situacao == "PROVAVEL"}
-        tipos_ok = {x.tipo for x in self.porques if x.causa_id in provaveis and x.resposta and x.ordem}
+        # cadeias só contam se ligadas a causa RELEVANTE e com ao menos uma resposta
+        relevantes = {c.id for c in self.causas if c.situacao == "RELEVANTE"}
+        tipos_ok = {x.tipo for x in self.porques if x.causa_id in relevantes and x.resposta and x.ordem}
         if "OCORRENCIA" not in tipos_ok:
             p.append("5 Porquês de ocorrência ausente")
         if "NAO_DETECCAO" not in tipos_ok:
             p.append("5 Porquês de não detecção ausente")
         for c in self.causas:
-            if c.situacao == "DESCARTADA" and not c.evidencia:
-                p.append(f"Causa descartada sem evidência: {c.descricao[:40]}")
+            if c.situacao == "IRRELEVANTE" and not c.evidencia:
+                p.append(f"Causa irrelevante sem evidência: {c.descricao[:40]}")
+            if not c.pernas_ativas(self.porques):
+                p.append(f"Causa sem tipo (ocorrência / não detecção): {c.descricao[:40]}")
         if not self.acoes:
             p.append("Nenhuma ação cadastrada (D5)")
         if not any(a.foco == "OCORRENCIA" for a in self.acoes):
@@ -152,15 +154,21 @@ class CausaIshikawa(db.Model):  # D4
     reclamacao_id = db.Column(db.Integer, db.ForeignKey("reclamacao.id"))
     categoria = db.Column(db.String(20))                                  # um de CATEGORIAS_6M
     descricao = db.Column(db.Text, nullable=False)
-    situacao = db.Column(db.String(12), default="EM_ANALISE")             # PROVAVEL / DESCARTADA
+    situacao = db.Column(db.String(12), default="RELEVANTE")              # RELEVANTE / IRRELEVANTE
     evidencia = db.Column(db.Text)
-    pernas = db.Column(db.String(40))   # "OCORRENCIA,NAO_DETECCAO": quais 5 Porquês esta causa usa
+    # tipo da linha: "OCORRENCIA", "NAO_DETECCAO" ou "OCORRENCIA,NAO_DETECCAO" (define os 5 Porquês)
+    pernas = db.Column(db.String(40))
+
+    def tipo_causa(self, porques):
+        """Chave de TIPOS_CAUSA ("" = ainda não definido)."""
+        return ",".join(self.pernas_ativas(porques))
 
     def pernas_ativas(self, porques):
         """As escolhidas; sem escolha ainda (causas antigas), as que já têm porquês preenchidos."""
         if self.pernas is not None:
             return [p for p in self.pernas.split(",") if p]
-        return sorted({p.tipo for p in porques if p.causa_id == self.id and (p.pergunta or p.resposta)})
+        tem = {p.tipo for p in porques if p.causa_id == self.id and (p.pergunta or p.resposta)}
+        return [t for t in ("OCORRENCIA", "NAO_DETECCAO") if t in tem]
 
 
 class Porque(db.Model):  # D4 - cadeia ligada à causa do Ishikawa
@@ -202,6 +210,7 @@ class Evidencia(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     reclamacao_id = db.Column(db.Integer, db.ForeignKey("reclamacao.id"))
     etapa = db.Column(db.String(4))                                       # D2, D3...
+    categoria = db.Column(db.String(20))                                  # no D4: o M (6M) do anexo
     arquivo = db.Column(db.String(200))                                   # uuid_nome.ext em instance/
     descricao = db.Column(db.String(200))
 

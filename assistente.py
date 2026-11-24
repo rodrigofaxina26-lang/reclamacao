@@ -20,7 +20,7 @@ from flask import (Blueprint, current_app, flash, redirect, render_template, req
 from werkzeug.utils import secure_filename
 
 import fontes
-from analise import TIPOS_ACAO, TIPOS_PORQUE, _rec_editavel
+from analise import TIPOS_ACAO, TIPOS_CAUSA, TIPOS_PORQUE, _rec_editavel
 from models import CATEGORIAS_6M, Acao, CausaIshikawa, Reclamacao, db
 from servicos import registrar, write_lock
 
@@ -55,7 +55,9 @@ Regras contra invenção (as mais importantes):
 - Prefira menos causas bem sustentadas a muitas causas soltas.
 
 Regras de análise:
-- Considere sempre as duas pernas: por que OCORREU e por que NÃO FOI DETECTADO.
+- Considere sempre as duas pernas: por que OCORREU e por que NÃO FOI DETECTADO. Em cada causa,
+  "tipo" diz qual perna ela explica: OCORRENCIA, NAO_DETECCAO ou OCORRENCIA,NAO_DETECCAO (as duas).
+  Inclua causas dos dois tipos.
 - Os "8Ds anteriores neste sistema" são a fonte mais confiável: causas já confirmadas e ações
   já testadas. Se um 8D anterior foi NÃO eficaz, não repita a mesma ação sem mudar a abordagem.
 - Se uma ação parecida já foi tomada antes para a mesma peça/modo de falha e o problema voltou,
@@ -121,8 +123,10 @@ ESQUEMA = {
         "leitura_historico": _txt,
         "causas": {"type": "array", "items": {
             "type": "object", "additionalProperties": False,
-            "required": ["categoria", "descricao", "base", "sustentacao"],
+            "required": ["categoria", "tipo", "descricao", "base", "sustentacao"],
             "properties": {"categoria": {"type": "string", "enum": CATEGORIAS_6M},
+                           # a linha da espinha explica a ocorrência, a não detecção ou as duas
+                           "tipo": {"type": "string", "enum": ["OCORRENCIA", "NAO_DETECCAO", "OCORRENCIA,NAO_DETECCAO"]},
                            "descricao": _txt, "base": _txt,
                            # DADO = há registro que sustenta; HIPOTESE = só raciocínio técnico
                            "sustentacao": {"type": "string", "enum": ["DADO", "HIPOTESE"]}}}},
@@ -321,8 +325,9 @@ def _historico_8d(rec):
             continue  # o LIKE pega FV1019 dentro de FV10191...: confere o código base exato
         d = {"8D": r.codigo, "data": r.data_recebimento.strftime("%d/%m/%Y") if r.data_recebimento else "",
              "cliente": r.cliente.nome, "peça": r.part_number, "modo de falha": r.modo_falha, "status": r.status,
-             "causas prováveis": "; ".join(f"[{c.categoria}] {c.descricao}" for c in r.causas if c.situacao == "PROVAVEL"),
-             "causas descartadas": "; ".join(f"[{c.categoria}] {c.descricao}" for c in r.causas if c.situacao == "DESCARTADA"),
+             "causas relevantes": "; ".join(f"[{c.categoria}] {c.descricao}" for c in r.causas if c.situacao == "RELEVANTE"),
+             "causas irrelevantes (descartadas)": "; ".join(f"[{c.categoria}] {c.descricao} (evidência: {c.evidencia or '-'})"
+                                                            for c in r.causas if c.situacao == "IRRELEVANTE"),
              "causa raiz ocorrência": r.d4_causa_ocorrencia, "causa raiz não detecção": r.d4_causa_nao_deteccao,
              "ações": "; ".join(f"[{a.tipo}/{a.foco}/{a.status}] {a.descricao}" for a in r.acoes),
              "eficaz (D8)": {True: "sim", False: "NÃO"}.get(r.d8_eficaz, "não avaliado"),
@@ -620,8 +625,10 @@ def aceitar(rid, tipo, i):
     s = resultado[tipo][i]
     with write_lock:
         if tipo == "causas":
-            db.session.add(CausaIshikawa(reclamacao_id=rid, categoria=s["categoria"], descricao=s["descricao"]))
-            registrar(rid, f"D4 · Causa incluída a partir de sugestão do assistente [{s['categoria']}]: {s['descricao']}")
+            tipo_causa = s.get("tipo") if s.get("tipo") in TIPOS_CAUSA else None
+            db.session.add(CausaIshikawa(reclamacao_id=rid, categoria=s["categoria"], descricao=s["descricao"],
+                                         situacao="RELEVANTE", pernas=tipo_causa))
+            registrar(rid, f"D4 · Causa incluída a partir de sugestão do assistente [{s['categoria']} · {TIPOS_CAUSA[tipo_causa][1] if tipo_causa else '?'}]: {s['descricao']}")
         else:
             resp = request.form.get("responsavel", "").strip()
             try:
