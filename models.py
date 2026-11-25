@@ -63,7 +63,8 @@ class Reclamacao(db.Model):
     d7_plano_controle = db.Column(db.Boolean, default=False)
     d7_instrucao_trabalho = db.Column(db.Boolean, default=False)
     d7_poka_yoke = db.Column(db.Boolean, default=False)
-    d7_licoes = db.Column(db.Text)
+    d7_licoes = db.Column(db.Text)  # antigo (texto), mantido só para histórico
+    d7_licoes_ok = db.Column(db.Boolean, default=False)
 
     # D8 - eficácia
     d8_lotes_verificados = db.Column(db.Integer, default=0)

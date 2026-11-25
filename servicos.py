@@ -57,7 +57,7 @@ CAMPOS = {
         ("d7_plano_controle", "Plano de controle atualizado", "bool"),
         ("d7_instrucao_trabalho", "Instrução de trabalho atualizada", "bool"),
         ("d7_poka_yoke", "Poka-yoke implantado", "bool"),
-        ("d7_licoes", "Lições aprendidas", "textarea"),
+        ("d7_licoes_ok", "Lições aprendidas", "bool"),
     ],
     "D8": [
         ("d8_lotes_verificados", "Lotes verificados após ações", "int0"),

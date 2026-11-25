@@ -41,6 +41,10 @@ def _migrar():
         db.session.execute(text("ALTER TABLE evidencia ADD COLUMN categoria VARCHAR(20)"))
     if "d4_comprovada_nao_deteccao" not in {r[1] for r in db.session.execute(text("PRAGMA table_info(reclamacao)"))}:
         db.session.execute(text("ALTER TABLE reclamacao ADD COLUMN d4_comprovada_nao_deteccao TEXT"))
+    if "d7_licoes_ok" not in {r[1] for r in db.session.execute(text("PRAGMA table_info(reclamacao)"))}:
+        db.session.execute(text("ALTER TABLE reclamacao ADD COLUMN d7_licoes_ok BOOLEAN DEFAULT 0"))
+        # quem já tinha escrito algo nas lições fica com a caixa marcada
+        db.session.execute(text("UPDATE reclamacao SET d7_licoes_ok = 1 WHERE TRIM(COALESCE(d7_licoes, '')) <> ''"))
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(causa_ishikawa)"))}
     if "pernas" not in cols:
         db.session.execute(text("ALTER TABLE causa_ishikawa ADD COLUMN pernas VARCHAR(40)"))
