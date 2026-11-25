@@ -1,5 +1,6 @@
-"""Relatório 8D em PDF (reportlab). Mostra só o que foi preenchido: seção ou campo vazio não aparece.
-Custos e histórico de alterações ficam de fora (são internos e o PDF pode ir para o cliente)."""
+"""Relatório 8D em PDF (reportlab): completo ou só de algumas etapas. Mostra só o que foi preenchido.
+Os anexos vão junto: imagens dentro da etapa, PDFs com as páginas acrescentadas no fim do arquivo,
+os demais (Excel, Word, e-mail...) listados. Custos e histórico ficam de fora (internos)."""
 import io
 import os
 from datetime import datetime
@@ -9,6 +10,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from servicos import CAMPOS
@@ -19,6 +21,8 @@ LINHA = colors.HexColor("#c9d3de")
 TIPOS_PORQUE = {"OCORRENCIA": "Ocorrência", "NAO_DETECCAO": "Não detecção"}
 SITUACAO = {"RELEVANTE": "Relevante", "IRRELEVANTE": "Irrelevante"}
 SIGLAS = {"OCORRENCIA": "O", "NAO_DETECCAO": "ND", "OCORRENCIA,NAO_DETECCAO": "O/ND"}
+ETAPAS = ["DADOS", "D1", "D2", "D3", "D4", "D5", "D6", "D7", "D8"]   # as que vão para o PDF (sem Custos/Histórico)
+EXT_IMAGEM = {"jpg", "jpeg", "png", "gif", "bmp"}
 
 _base = getSampleStyleSheet()
 TXT = ParagraphStyle("txt", parent=_base["Normal"], fontName="Helvetica", fontSize=9, leading=11.5)
@@ -84,31 +88,77 @@ def _campos(rec, aba, largura_rotulo=60):
     return t
 
 
-def gerar(rec, evidencias, raiz_static, gerado_por):
+def _imagem(caminho, legenda):
+    """Imagem reduzida (fotos de celular têm 4000 px: o PDF ficaria enorme) e com a legenda embaixo."""
+    from PIL import Image as PIL
+    with PIL.open(caminho) as im:
+        im = im.convert("RGB")
+        im.thumbnail((1600, 1600))
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=82)
+    buf.seek(0)
+    larg, alt = ImageReader(buf).getSize()
+    escala = min(180 * mm / larg, 115 * mm / alt)
+    buf.seek(0)
+    return KeepTogether([Spacer(1, 3 * mm), Image(buf, width=larg * escala, height=alt * escala),
+                         Spacer(1, 1 * mm), _p(legenda, PEQ)])
+
+
+def _anexos(evs, pasta, pdfs):
+    """Bloco de anexos de uma etapa. Os PDFs entram em `pdfs` (vão para o fim do arquivo)."""
+    if not evs:
+        return []
+    e = [Spacer(1, 4 * mm), _p(f"Anexos ({len(evs)})", TXT_B)]
+    for ev in evs:
+        nome = ev.arquivo.split("_", 1)[-1]
+        rot = nome + (f" · {ev.categoria}" if ev.categoria else "") + (f" - {ev.descricao}" if ev.descricao else "")
+        caminho = os.path.join(pasta, ev.arquivo)
+        ext = nome.rsplit(".", 1)[-1].lower()
+        if not os.path.isfile(caminho):
+            e.append(_p(f"• {rot} (arquivo não encontrado no sistema)"))
+        elif ext in EXT_IMAGEM:
+            try:
+                e.append(_imagem(caminho, rot))
+            except Exception:
+                e.append(_p(f"• {rot} (imagem não pôde ser aberta)"))
+        elif ext == "pdf":
+            pdfs.append((caminho, rot))
+            e.append(Paragraph(f"• {escape(rot)}: <b>Anexo {len(pdfs)}</b>, páginas no fim deste relatório "
+                               f"({{pag{len(pdfs)}}})", TXT))
+        else:
+            e.append(_p(f"• {rot} (arquivo .{ext}: abrir no sistema de reclamações 8D)"))
+    return e
+
+
+def _gerar_corpo(rec, evidencias, raiz_static, gerado_por, etapas, pasta, paginas_anexos):
+    """Monta o relatório; devolve (bytes, [(pdf_anexo, legenda)]). paginas_anexos: página onde cada
+    PDF anexado começa (calculada numa primeira passada)."""
     buf = io.BytesIO()
+    titulo = f"Relatório 8D · {rec.codigo}" + ("" if etapas == ETAPAS else " · " + ", ".join(
+        "Dados" if x == "DADOS" else x for x in etapas))
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15 * mm, rightMargin=15 * mm,
-                            topMargin=14 * mm, bottomMargin=16 * mm,
-                            title=f"8D {rec.codigo}", author="Pro-Metal")
+                            topMargin=14 * mm, bottomMargin=16 * mm, title=titulo, author="Pro-Metal")
     agora = datetime.now()
+    pdfs = []
+    por_etapa = {x: [ev for ev in evidencias if ev.etapa == x] for x in ETAPAS}
 
     def rodape(canvas, d):
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
         canvas.setFillColor(colors.grey)
-        canvas.drawString(15 * mm, 9 * mm, f"Pro-Metal · Relatório 8D {rec.codigo} · gerado em "
-                                           f"{agora:%d/%m/%Y %H:%M} por {gerado_por}")
+        canvas.drawString(15 * mm, 9 * mm, f"Pro-Metal · {titulo} · gerado em {agora:%d/%m/%Y %H:%M} por {gerado_por}")
         canvas.drawRightString(195 * mm, 9 * mm, f"Página {d.page}")
         canvas.restoreState()
 
     e = []
     logo = os.path.join(raiz_static, "logo.png")
     cab_esq = Image(logo, width=40 * mm, height=15 * mm, kind="proportional") if os.path.exists(logo) else ""
-    cab = Table([[cab_esq, Paragraph(f"Relatório 8D · {escape(rec.codigo)}", TIT)]], colWidths=[50 * mm, 130 * mm])
+    cab = Table([[cab_esq, Paragraph(escape(titulo), TIT)]], colWidths=[50 * mm, 130 * mm])
     cab.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ALIGN", (1, 0), (1, 0), "RIGHT"),
                              ("LINEBELOW", (0, 0), (-1, 0), 1.2, AZUL), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     e += [cab, Spacer(1, 4 * mm)]
 
-    # resumo: só os pares preenchidos, dois por linha
+    # resumo (sempre): só os pares preenchidos, dois por linha
     pares = [(r, v) for r, v in (
         ("Cliente", rec.cliente.nome), ("Status", rec.status), ("Part number", rec.part_number),
         ("Nº no cliente", rec.num_reclamacao_cliente), ("Modo de falha", rec.modo_falha), ("Lote", rec.lote),
@@ -122,28 +172,41 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
     t = _tabela(resumo, [32, 58, 32, 58], cabecalho=False)
     t.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, -1), CINZA), ("BACKGROUND", (2, 0), (2, -1), CINZA)]))
     e.append(t)
+    if "DADOS" in etapas:
+        e += _anexos(por_etapa["DADOS"], pasta, pdfs)
 
+    def secao(chaves, titulo_sec, conteudo):
+        """Seção de uma ou mais etapas: conteúdo + anexos. Some se estiver vazia, a não ser que a etapa
+        tenha sido pedida sozinha (aí avisa que não há nada preenchido)."""
+        if not any(k in etapas for k in chaves):
+            return
+        anexos = [x for k in chaves for x in _anexos(por_etapa[k], pasta, pdfs)]
+        if not conteudo and not anexos:
+            if len(etapas) == 1:
+                e.extend(_secao(titulo_sec) + [_p("Nada preenchido nesta etapa.")])
+            return
+        e.extend(_secao(titulo_sec) + conteudo + anexos)
+
+    d1 = []
     if rec.equipe:
-        e += _secao("D1 · Equipe")
-        e.append(_tabela([[_p("Nome", TXT_B), _p("Função", TXT_B), _p("Líder", TXT_B)]] +
-                         [[_p(m.nome), _p(m.funcao), _p("Sim" if m.lider else "")] for m in rec.equipe], [80, 75, 25]))
+        d1.append(_tabela([[_p("Nome", TXT_B), _p("Função", TXT_B), _p("Líder", TXT_B)]] +
+                          [[_p(m.nome), _p(m.funcao), _p("Sim" if m.lider else "")] for m in rec.equipe], [80, 75, 25]))
+    secao(["D1"], "D1 · Equipe", d1)
 
     t = _campos(rec, "D2", 45)
-    if t:
-        e += _secao("D2 · Descrição do problema (5W2H)")
-        e.append(t)
+    secao(["D2"], "D2 · Descrição do problema (5W2H)", [t] if t else [])
 
     d3 = []
     for nome, pref in (("Estoque Pro-Metal", "d3_estoque"), ("Em trânsito", "d3_transito"), ("No cliente", "d3_cliente")):
         qtd, nok = getattr(rec, pref + "_qtd"), getattr(rec, pref + "_nok")
         if qtd is not None or nok is not None:
             d3.append([_p(nome), _p(qtd), _p(nok)])
-    if d3 or rec.d3_concluida_em:
-        e += _secao("D3 · Contenção")
-        if d3:
-            e.append(_tabela([[_p("Local", TXT_B), _p("Qtd. verificada", TXT_B), _p("NOK", TXT_B)]] + d3, [80, 50, 50]))
-        if rec.d3_concluida_em:
-            e += [Spacer(1, 2 * mm), _p(f"Contenção concluída em: {rec.d3_concluida_em:%d/%m/%Y %H:%M}")]
+    c3 = []
+    if d3:
+        c3.append(_tabela([[_p("Local", TXT_B), _p("Qtd. verificada", TXT_B), _p("NOK", TXT_B)]] + d3, [80, 50, 50]))
+    if rec.d3_concluida_em:
+        c3 += [Spacer(1, 2 * mm), _p(f"Contenção concluída em: {rec.d3_concluida_em:%d/%m/%Y %H:%M}")]
+    secao(["D3"], "D3 · Contenção", c3)
 
     d4 = []
     if rec.causas:
@@ -168,35 +231,58 @@ def gerar(rec, evidencias, raiz_static, gerado_por):
     t = _campos(rec, "D4", 55)
     if t:
         d4 += [Spacer(1, 3 * mm), t]
-    if d4:
-        e += _secao("D4 · Análise de causa raiz") + d4
+    secao(["D4"], "D4 · Análise de causa raiz", d4)
 
+    d56 = []
     if rec.acoes:
-        e += _secao("D5/D6 · Ações corretivas e implementação")
         linhas = [[_p(h, TXT_B) for h in ("Tipo", "Foco", "Ação", "Responsável", "Prazo", "Status / concluída")]]
         for a in sorted(rec.acoes, key=lambda a: (a.prazo or datetime.max.date())):
             concl = a.status + (f"\n{a.concluida_em:%d/%m/%Y}" if a.concluida_em else "")
             linhas.append([_p(a.tipo), _p(TIPOS_PORQUE.get(a.foco, a.foco)), _p(a.descricao), _p(a.responsavel),
                            _p(a.prazo.strftime("%d/%m/%Y") if a.prazo else None), _p(concl)])
-        e.append(_tabela(linhas, [25, 21, 55, 26, 21, 32]))
+        d56.append(_tabela(linhas, [25, 21, 55, 26, 21, 32]))
+    secao(["D5", "D6"], "D5/D6 · Ações corretivas e implementação", d56)
 
     t = _campos(rec, "D7", 60)
-    if t:
-        e += _secao("D7 · Prevenção")
-        e.append(t)
+    secao(["D7"], "D7 · Prevenção", [t] if t else [])
 
     t = _campos(rec, "D8", 60)
-    if t:
-        e += _secao("D8 · Verificação de eficácia e encerramento")
-        e.append(t)
+    secao(["D8"], "D8 · Verificação de eficácia e encerramento", [t] if t else [])
 
-    if evidencias:
-        e += _secao("Evidências anexadas")
-        e.append(_tabela([[_p("Etapa", TXT_B), _p("Arquivo", TXT_B), _p("Descrição", TXT_B)]] +
-                         [[_p(ev.etapa + (f" · {ev.categoria}" if ev.categoria else "")), _p(ev.arquivo.split("_", 1)[-1]),
-                           _p(ev.descricao)] for ev in evidencias],
-                         [30, 72, 78]))
-        e += [Spacer(1, 1.5 * mm), _p("Os arquivos ficam no sistema de reclamações 8D.", PEQ)]
+    # número da página onde cada PDF anexado começa (na 1ª passada ainda não se sabe)
+    for f in e:
+        if isinstance(f, Paragraph) and "{pag" in f.text:
+            for n in range(1, len(pdfs) + 1):
+                f.text = f.text.replace(f"{{pag{n}}}", f"página {paginas_anexos[n - 1]}" if paginas_anexos else "página ?")
+            f.__init__(f.text, f.style)
 
     doc.build(e, onFirstPage=rodape, onLaterPages=rodape)
+    return buf.getvalue(), pdfs
+
+
+def gerar(rec, evidencias, raiz_static, gerado_por, etapas=None, pasta_uploads=""):
+    """etapas=None: relatório completo. PDFs anexados vão depois das páginas do relatório."""
+    from pypdf import PdfReader, PdfWriter
+    etapas = [x for x in ETAPAS if x in (etapas or ETAPAS)]
+    corpo, pdfs = _gerar_corpo(rec, evidencias, raiz_static, gerado_por, etapas, pasta_uploads, None)
+    if not pdfs:
+        return corpo
+    leitores, inicio, paginas = [], len(PdfReader(io.BytesIO(corpo)).pages) + 1, []
+    for caminho, _ in pdfs:
+        try:
+            r = PdfReader(caminho)
+            n = len(r.pages)
+        except Exception:
+            r, n = None, 0
+        leitores.append(r)
+        paginas.append(inicio if r else "não pôde ser incluído")
+        inicio += n
+    corpo2, _ = _gerar_corpo(rec, evidencias, raiz_static, gerado_por, etapas, pasta_uploads, paginas)
+    saida = PdfWriter()
+    saida.append(PdfReader(io.BytesIO(corpo2)))
+    for r, (_, legenda) in zip(leitores, pdfs):
+        if r:
+            saida.append(r, outline_item=legenda)
+    buf = io.BytesIO()
+    saida.write(buf)
     return buf.getvalue()

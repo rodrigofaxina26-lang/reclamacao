@@ -275,8 +275,11 @@
 {% endif %}
 </section>
 <div class="linha" style="margin-top:28px">
-  <a class="botao" href="{{ url_for('rec.relatorio_pdf', rid=rec.id) }}" target="_blank">📄 Gerar PDF do 8D</a>
-  <span class="legenda">Só o que foi preenchido (D1 a D8). Custos e histórico de alterações não entram.</span>
+  {% if aba in ['DADOS', 'D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7', 'D8'] %}
+  <a class="botao secundario" href="{{ url_for('rec.relatorio_pdf', rid=rec.id, etapa=aba) }}" target="_blank">📄 PDF só {{ 'dos Dados' if aba == 'DADOS' else 'do ' ~ aba }}</a>
+  {% endif %}
+  <a class="botao" href="{{ url_for('rec.relatorio_pdf', rid=rec.id) }}" target="_blank">📄 PDF do 8D completo</a>
+  <span class="legenda">Só o que foi preenchido, com os anexos (imagens dentro, PDFs no fim). Custos e histórico não entram.</span>
 </div>
 {% if eh_admin %}<details class="zona-perigo">
   <summary>Excluir reclamação</summary>

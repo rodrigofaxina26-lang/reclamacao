@@ -102,3 +102,5 @@ a.ordenar:hover { text-decoration: underline; }
 .anexos-m { border-top: 1px dashed #dde3ea; margin-top: 8px; padding-top: 6px; font-size: 14px; }
 .anexos-m ul { margin: 4px 0 6px; }
 .tag-tipo { background: #e8eefc; color: #1f3a5f; font-weight: 600; }
+a.botao.secundario { background: #fff; color: #1f3a5f; border: 1px solid #1f3a5f; }
+a.botao.secundario:hover { background: #eef2f6; }

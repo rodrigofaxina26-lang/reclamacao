@@ -303,10 +303,14 @@ def evidencia_excluir(eid):
 def relatorio_pdf(rid):
     import relatorio_pdf as rp
     rec = _obter(rid)
-    evs = Evidencia.query.filter_by(reclamacao_id=rid).order_by(Evidencia.etapa, Evidencia.id).all()
-    pdf = rp.gerar(rec, evs, current_app.static_folder, session.get("nome") or session.get("usuario"))
+    # ?etapa=D4 (pode repetir: ?etapa=D3&etapa=D4); sem etapa = relatório completo
+    etapas = [x for x in request.args.getlist("etapa") if x in rp.ETAPAS] or None
+    evs = Evidencia.query.filter_by(reclamacao_id=rid).order_by(Evidencia.etapa, Evidencia.categoria, Evidencia.id).all()
+    pdf = rp.gerar(rec, evs, current_app.static_folder, session.get("nome") or session.get("usuario"),
+                   etapas=etapas, pasta_uploads=current_app.config["UPLOAD_FOLDER"])
     resp = current_app.response_class(pdf, mimetype="application/pdf")
-    resp.headers["Content-Disposition"] = f'inline; filename="8D_{rec.codigo}_{rec.part_number}.pdf"'
+    sufixo = "_" + "_".join(etapas) if etapas else ""
+    resp.headers["Content-Disposition"] = f'inline; filename="8D_{rec.codigo}_{rec.part_number}{sufixo}.pdf"'
     return resp
 
 
