@@ -104,3 +104,6 @@ a.ordenar:hover { text-decoration: underline; }
 .tag-tipo { background: #e8eefc; color: #1f3a5f; font-weight: 600; }
 a.botao.secundario { background: #fff; color: #1f3a5f; border: 1px solid #1f3a5f; }
 a.botao.secundario:hover { background: #eef2f6; }
+
+.rodape { max-width: 1300px; margin: 24px auto 0; padding: 12px 20px 18px; border-top: 1px solid #dde3ea;
+          text-align: center; font-size: 12px; color: #8a94a3; }
