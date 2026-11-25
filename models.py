@@ -54,7 +54,8 @@ class Reclamacao(db.Model):
     # D4 - validação (sem isso 5 Porquês é opinião)
     d4_causa_ocorrencia = db.Column(db.Text)
     d4_causa_nao_deteccao = db.Column(db.Text)
-    d4_como_comprovada = db.Column(db.Text)
+    d4_como_comprovada = db.Column(db.Text)  # comprovação da ocorrência
+    d4_comprovada_nao_deteccao = db.Column(db.Text)
     d4_concluida_em = db.Column(db.DateTime)
 
     # D7 - prevenção
@@ -107,7 +108,9 @@ class Reclamacao(db.Model):
         if not self.d4_causa_nao_deteccao:
             p.append("Causa de NÃO DETECÇÃO não preenchida")
         if not self.d4_como_comprovada:
-            p.append("Causa raiz sem comprovação")
+            p.append("Causa de OCORRÊNCIA sem comprovação")
+        if not self.d4_comprovada_nao_deteccao:
+            p.append("Causa de NÃO DETECÇÃO sem comprovação")
         # cadeias só contam se ligadas a causa RELEVANTE e com ao menos uma resposta
         relevantes = {c.id for c in self.causas if c.situacao == "RELEVANTE"}
         tipos_ok = {x.tipo for x in self.porques if x.causa_id in relevantes and x.resposta and x.ordem}

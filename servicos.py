@@ -47,8 +47,9 @@ CAMPOS = {
     ],
     "D4": [
         ("d4_causa_ocorrencia", "Causa raiz de OCORRÊNCIA", "textarea"),
+        ("d4_como_comprovada", "Causa comprovada de OCORRÊNCIA (como foi comprovada)", "textarea"),
         ("d4_causa_nao_deteccao", "Causa raiz de NÃO DETECÇÃO", "textarea"),
-        ("d4_como_comprovada", "Como a causa foi comprovada", "textarea"),
+        ("d4_comprovada_nao_deteccao", "Causa comprovada de NÃO DETECÇÃO (como foi comprovada)", "textarea"),
         ("d4_concluida_em", "Análise concluída em", "datetime"),
     ],
     "D7": [

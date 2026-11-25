@@ -39,6 +39,8 @@ def _migrar():
     db.session.execute(text("UPDATE causa_ishikawa SET situacao = 'IRRELEVANTE' WHERE situacao = 'DESCARTADA'"))
     if "categoria" not in {r[1] for r in db.session.execute(text("PRAGMA table_info(evidencia)"))}:
         db.session.execute(text("ALTER TABLE evidencia ADD COLUMN categoria VARCHAR(20)"))
+    if "d4_comprovada_nao_deteccao" not in {r[1] for r in db.session.execute(text("PRAGMA table_info(reclamacao)"))}:
+        db.session.execute(text("ALTER TABLE reclamacao ADD COLUMN d4_comprovada_nao_deteccao TEXT"))
     cols = {r[1] for r in db.session.execute(text("PRAGMA table_info(causa_ishikawa)"))}
     if "pernas" not in cols:
         db.session.execute(text("ALTER TABLE causa_ishikawa ADD COLUMN pernas VARCHAR(40)"))
